@@ -1,0 +1,24 @@
+plugin_LTLIBRARIES = libgstflutimeshift.la
+
+# sources used to compile this plugin
+libgstflutimeshift_la_SOURCES = \
+  flutimeshift.c \
+  flutsbase.c \
+  flucache.c \
+  flutsfake.c \
+  flutsmpeg.c
+
+libgstflutimeshift_la_CFLAGS = \
+  $(GST_CFLAGS) $(GST_BASE_CFLAGS) $(GST_PLUGINS_BASE_CFLAGS) \
+  $(CPU_TUNE_CFLAGS) -I$(top_srcdir)/common
+libgstflutimeshift_la_LDFLAGS = $(GST_PLUGIN_LDFLAGS) $(CPU_TUNE_LDFLAGS)
+libgstflutimeshift_la_LIBADD = \
+  $(GST_LIBS) $(GST_BASE_LIBS) $(GST_PLUGINS_BASE_LIBS)
+
+# headers we need but don't want installed
+noinst_HEADERS = \
+  flutsbase.h \
+  flucache.h \
+  flutsfake.h \
+  flutsmpeg.h
+
