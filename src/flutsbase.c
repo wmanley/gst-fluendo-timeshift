@@ -83,8 +83,8 @@ enum
   g_cond_signal (ts->buffer_add);                                         \
 } G_STMT_END
 
-
-GST_BOILERPLATE (GstFluTSBase, gst_flutsbase, GstElement, GST_TYPE_ELEMENT);
+#define gst_flutsbase_parent_class parent_class
+G_DEFINE_TYPE (GstFluTSBase, gst_flutsbase, GST_TYPE_ELEMENT);
 
 static void
 gst_flutsbase_start (GstFluTSBase * ts)
@@ -1010,7 +1010,7 @@ gst_flutsbase_class_init (GstFluTSBaseClass * klass)
 }
 
 static void
-gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * g_class)
+gst_flutsbase_init (GstFluTSBase * ts)
 {
   /* set default values */
   ts->cur_bytes = 0;

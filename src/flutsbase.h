@@ -20,9 +20,6 @@
 #ifndef __FLUTSBASE_H__
 #define __FLUTSBASE_H__
 
-#include <gst/gst.h>
-#include <stdio.h>
-
 #include "flucache.h"
 
 G_BEGIN_DECLS

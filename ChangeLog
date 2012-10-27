@@ -1,5 +1,16 @@
 2012-10-27  Josep Torra  <josep@fluendo.com>
 
+	* src/flucache.h:
+	* src/flutsbase.c: (gst_flutsbase_init):
+	* src/flutsbase.h:
+	* src/flutsfake.c: (gst_flufakeshifter_class_init),
+	(gst_flufakeshifter_init):
+	* src/flutsmpeg.c: (gst_flumpegshifter_class_init),
+	(gst_flumpegshifter_init):
+	Drop GST_BOILERPLATE.
+
+2012-10-27  Josep Torra  <josep@fluendo.com>
+
 	* configure.ac: Back to TRUNK.
 
 2012-10-27  Josep Torra  <josep@fluendo.com>

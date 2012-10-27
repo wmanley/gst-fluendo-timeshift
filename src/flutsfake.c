@@ -22,15 +22,8 @@
 GST_DEBUG_CATEGORY_EXTERN (ts_fake);
 #define GST_CAT_DEFAULT ts_fake
 
-GST_BOILERPLATE (GstFluFakeShifter, gst_flufakeshifter, GstFluTSBase,
-    GST_FLUTSBASE_TYPE);
-
-static GstElementDetails flufakeshifter_details = {
-  "Fluendo Time Shift for fake streams",
-  "Generic",
-  "Provide time shift operations on fake streams",
-  "Fluendo S.A. <support@fluendo.com>"
-};
+#define gst_flufakeshifter_parent_class parent_class
+G_DEFINE_TYPE (GstFluFakeShifter, gst_flufakeshifter, GST_FLUTSBASE_TYPE);
 
 static GstStaticPadTemplate flufakeshifter_src_factory =
 GST_STATIC_PAD_TEMPLATE ("src",
@@ -41,27 +34,24 @@ GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS_ANY);
 
 static void
-gst_flufakeshifter_base_init (gpointer g_class)
+gst_flufakeshifter_class_init (GstFluFakeShifterClass * klass)
 {
-  GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&flufakeshifter_src_factory));
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&flufakeshifter_sink_factory));
-  gst_element_class_set_details (element_class, &flufakeshifter_details);
+
+  gst_element_class_set_details_simple (element_class,
+      "Fluendo Time Shift for fake streams",
+      "Generic",
+      "Provide time shift operations on fake streams",
+      "Fluendo S.A. <support@fluendo.com>");
 }
 
 static void
-gst_flufakeshifter_class_init (GstFluFakeShifterClass * klass)
-{
-  //GstFluTSBaseClass *base_class = GST_FLUTSBASE_CLASS (klass);
-
-}
-
-static void
-gst_flufakeshifter_init (GstFluFakeShifter * ts,
-    GstFluFakeShifterClass * g_class)
+gst_flufakeshifter_init (GstFluFakeShifter * ts)
 {
   gst_flutsbase_add_pads (GST_FLUTSBASE (ts));
 }

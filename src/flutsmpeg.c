@@ -22,15 +22,8 @@
 GST_DEBUG_CATEGORY_EXTERN (ts_mpeg);
 #define GST_CAT_DEFAULT ts_mpeg
 
-GST_BOILERPLATE (GstFluMPEGShifter, gst_flumpegshifter, GstFluTSBase,
-    GST_FLUTSBASE_TYPE);
-
-static GstElementDetails flutsmpeg_details = {
-  "Fluendo Time Shift for MPEG TS streams",
-  "Generic",
-  "Provide time shift operations on MPEG TS streams",
-  "Fluendo S.A. <support@fluendo.com>"
-};
+#define gst_flumpegshifter_parent_class parent_class
+G_DEFINE_TYPE (GstFluMPEGShifter, gst_flumpegshifter, GST_FLUTSBASE_TYPE);
 
 static GstStaticPadTemplate flutsmpeg_src_factory =
 GST_STATIC_PAD_TEMPLATE ("src",
@@ -432,22 +425,11 @@ gst_flumpegshifter_get_property (GObject * object,
 }
 
 static void
-gst_flumpegshifter_base_init (gpointer g_class)
-{
-  GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
-
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&flutsmpeg_src_factory));
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&flutsmpeg_sink_factory));
-  gst_element_class_set_details (element_class, &flutsmpeg_details);
-}
-
-static void
 gst_flumpegshifter_class_init (GstFluMPEGShifterClass * klass)
 {
   GstFluTSBaseClass *bclass = GST_FLUTSBASE_CLASS (klass);
   GObjectClass *gclass = G_OBJECT_CLASS (klass);
+  GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
 
   /* gobject overrides */
   gclass->set_property = gst_flumpegshifter_set_property;
@@ -472,11 +454,22 @@ gst_flumpegshifter_class_init (GstFluMPEGShifterClass * klass)
   bclass->seek = gst_flumpegshifter_seek;
   bclass->update_segment = gst_flumpegshifter_update_segment;
   bclass->query = gst_flumpegshifter_query;
+
+  /* GstElement related stuff */
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&flutsmpeg_src_factory));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&flutsmpeg_sink_factory));
+
+  gst_element_class_set_details_simple (element_class,
+      "Fluendo Time Shift for MPEG TS streams",
+      "Generic",
+      "Provide time shift operations on MPEG TS streams",
+      "Fluendo S.A. <support@fluendo.com>");
 }
 
 static void
-gst_flumpegshifter_init (GstFluMPEGShifter * ts,
-    GstFluMPEGShifterClass * g_class)
+gst_flumpegshifter_init (GstFluMPEGShifter * ts)
 {
   gst_flutsbase_add_pads (GST_FLUTSBASE (ts));
 
