@@ -6,7 +6,9 @@ libgstflutimeshift_la_SOURCES = \
   flutsbase.c \
   flucache.c \
   flutsfake.c \
-  flutsmpeg.c
+  flutsmpeg.c \
+  flutsindex.c \
+  flutsmemindex.c
 
 libgstflutimeshift_la_CFLAGS = \
  -I$(top_srcdir)/common \
@@ -29,5 +31,6 @@ noinst_HEADERS = \
   flutsbase.h \
   flucache.h \
   flutsfake.h \
-  flutsmpeg.h
+  flutsmpeg.h \
+  flutsindex.h
 

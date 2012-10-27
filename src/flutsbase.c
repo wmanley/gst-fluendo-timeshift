@@ -769,6 +769,7 @@ gst_flutsbase_src_activate_push (GstPad * pad, gboolean active)
   return ret;
 }
 
+#if !GST_CHECK_VERSION(1,0,0)
 static void
 gst_flutsbase_set_index (GstElement * element, GstIndex * index)
 {
@@ -776,15 +777,16 @@ gst_flutsbase_set_index (GstElement * element, GstIndex * index)
 
   GST_OBJECT_LOCK (ts);
 
-  if (ts->index)
+  if (ts->index) {
     gst_object_unref (ts->index);
+  }
   if (index) {
     ts->index = gst_object_ref (index);
     gst_index_get_writer_id (index, GST_OBJECT (element), &ts->index_id);
     ts->own_index = FALSE;
-  } else
+  } else {
     ts->index = NULL;
-
+  }
   GST_OBJECT_UNLOCK (ts);
 }
 
@@ -796,13 +798,15 @@ gst_flutsbase_get_index (GstElement * element)
 
   GST_OBJECT_LOCK (ts);
 
-  if (ts->index)
+  if (ts->index) {
     ret = gst_object_ref (ts->index);
+  }
 
   GST_OBJECT_UNLOCK (ts);
 
   return ret;
 }
+#endif
 
 static GstStateChangeReturn
 gst_flutsbase_change_state (GstElement * element, GstStateChange transition)
@@ -993,8 +997,11 @@ gst_flutsbase_class_init (GstFluTSBaseClass * klass)
 
   eclass->change_state = GST_DEBUG_FUNCPTR (gst_flutsbase_change_state);
   eclass->query = GST_DEBUG_FUNCPTR (gst_flutsbase_handle_query);
+
+#if !GST_CHECK_VERSION(1,0,0)
   eclass->set_index = GST_DEBUG_FUNCPTR (gst_flutsbase_set_index);
   eclass->get_index = GST_DEBUG_FUNCPTR (gst_flutsbase_get_index);
+#endif  
 }
 
 static void

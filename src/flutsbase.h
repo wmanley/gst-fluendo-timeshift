@@ -22,6 +22,10 @@
 
 #include "flucache.h"
 
+#if GST_CHECK_VERSION(1,0,0)
+#include "flutsindex.h"
+#endif
+
 G_BEGIN_DECLS
 #define GST_FLUTSBASE_TYPE \
   (gst_flutsbase_get_type())
@@ -71,7 +75,6 @@ struct _GstFluTSBase
   gchar *recording_template;
   gboolean recording_remove;
   gboolean recording_started;
-
 
   /* Generated Index */
   GstIndex *index;

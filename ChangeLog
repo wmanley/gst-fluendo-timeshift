@@ -1,3 +1,29 @@
+2012-10-27  Josep Torra  <josep@fluendo.com>
+
+	* src/Makefile.am:
+	* src/flutsbase.c: (gst_flutsbase_set_index),
+	(gst_flutsbase_get_index), (gst_flutsbase_class_init):
+	* src/flutsbase.h:
+	* src/flutsindex.c: (gst_flutsindex_entry_get_type),
+	(gst_flutsindex_class_init), (gst_flutsindex_init),
+	(gst_flutsindex_free_writer), (gst_flutsindex_finalize),
+	(gst_flutsindex_add_entry), (gst_flutsindex_entry_copy),
+	(gst_flutsindex_entry_free), (gst_flutsindex_add_id),
+	(gst_flutsindex_get_writer_id), (gst_flutsindex_add_associationv),
+	(gst_flutsindex_compare_func), (gst_flutsindex_get_assoc_entry),
+	(gst_flutsindex_get_assoc_entry_full),
+	(gst_flutsindex_entry_assoc_map):
+	* src/flutsindex.h:
+	* src/flutsmemindex.c: (gst_flutsmemindex_new),
+	(gst_flutsmemindex_class_init), (gst_flutsmemindex_init),
+	(gst_flutsmemindex_free_format), (gst_flutsmemindex_free_id),
+	(gst_flutsmemindex_finalize), (gst_flutsmemindex_add_id),
+	(mem_index_compare), (gst_flutsmemindex_index_format),
+	(gst_flutsmemindex_add_association), (gst_flutsmemindex_add_entry),
+	(mem_index_search), (gst_flutsmemindex_get_assoc_entry):
+	Import a minimalistic local copy of GstIndex in order to port
+	the code to 1.0.
+
 2012-10-27  Josep Torra <josep@fluendo.com>
 
 	* src/flutsbase.c: (gst_flutsbase_class_init):
