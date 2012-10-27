@@ -1,5 +1,19 @@
 2012-10-27  Josep Torra  <josep@fluendo.com>
 
+	* src/flucache.c: (_slot_meta_init), (_slot_meta_free),
+	(gst_slot_meta_init), (gst_slot_meta_free),
+	(gst_slot_meta_get_info), (gst_slot_buffer_new),
+	(gst_slot_buffer_finalize), (gst_slot_buffer_init),
+	(gst_slot_buffer_class_init), (gst_shifter_cache_new):
+	* src/flutsbase.c: (gst_flutsbase_push_one), (gst_flutsbase_loop),
+	(gst_flutsbase_chain), (gst_flutsbase_handle_sink_event),
+	(gst_flutsbase_handle_src_event),
+	(gst_flutsbase_sink_activate_mode),
+	(gst_flutsbase_src_activate_mode), (gst_flutsbase_add_pads):
+	Add some 1.0 related changes and refactorings.
+
+2012-10-27  Josep Torra  <josep@fluendo.com>
+
 	* src/Makefile.am:
 	* src/flutsbase.c: (gst_flutsbase_set_index),
 	(gst_flutsbase_get_index), (gst_flutsbase_class_init):

@@ -25,6 +25,13 @@
 
 #include <glib/gstdio.h>
 
+#if !GST_CHECK_VERSION(1,0,0)
+#define GST_FLOW_EOS GST_FLOW_UNEXPECTED
+#define gst_buffer_get_size(buffer) GST_BUFFER_SIZE (buffer)
+#define GST_EVENT_SEGMENT GST_EVENT_NEWSEGMENT
+#define gst_pad_set_activatemode_function gst_pad_set_activatepush_function
+#endif
+
 GST_DEBUG_CATEGORY_EXTERN (ts_base);
 GST_DEBUG_CATEGORY_EXTERN (ts_flow);
 #define GST_CAT_DEFAULT (ts_base)
@@ -176,17 +183,21 @@ gst_flutsbase_push_one (GstFluTSBase * ts)
 {
   GstFlowReturn ret = GST_FLOW_OK;
   GstBuffer *buffer;
-  GstCaps *caps;
 
   if (!(buffer = gst_shifter_cache_pop (ts->cache, ts->is_eos)))
     goto no_item;
 
-  caps = GST_BUFFER_CAPS (buffer);
+#if !GST_CHECK_VERSION (1,0,0)
+  {
+	  GstCaps *caps;
+	  caps = GST_BUFFER_CAPS (buffer);
 
-  /* set caps before pushing the buffer so that core does not try to do
-   * something fancy to check if this is possible. */
-  if (caps && caps != GST_PAD_CAPS (ts->srcpad))
-    gst_pad_set_caps (ts->srcpad, caps);
+	  /* set caps before pushing the buffer so that core does not try to do
+	   * something fancy to check if this is possible. */
+	  if (caps && caps != GST_PAD_CAPS (ts->srcpad))
+		gst_pad_set_caps (ts->srcpad, caps);
+  }
+#endif
 
   if (G_UNLIKELY (ts->need_newsegment)) {
     GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
@@ -200,8 +211,12 @@ gst_flutsbase_push_one (GstFluTSBase * ts)
 
     GST_DEBUG_OBJECT (ts, "pushing segment %" GST_SEGMENT_FORMAT, &ts->segment);
 
+#if GST_CHECK_VERSION (1,0,0)
+    newsegment = gst_event_new_segment (&ts->segment);
+#else
     newsegment = gst_event_new_new_segment (FALSE, ts->segment.rate,
         ts->segment.format, ts->segment.start, -1, ts->segment.time);
+#endif
     if (newsegment) {
       ret = gst_pad_push_event (ts->srcpad, newsegment);
     }
@@ -212,18 +227,18 @@ gst_flutsbase_push_one (GstFluTSBase * ts)
 
   GST_CAT_LOG_OBJECT (ts_flow, ts,
       "pushing buffer %p of size %d, offset %" G_GUINT64_FORMAT,
-      buffer, GST_BUFFER_SIZE (buffer), GST_BUFFER_OFFSET (buffer));
+      buffer, gst_buffer_get_size (buffer), GST_BUFFER_OFFSET (buffer));
 
   ret = gst_pad_push (ts->srcpad, buffer);
 
   /* need to check for srcresult here as well */
   FLOW_MUTEX_LOCK_CHECK (ts, ts->srcresult, out_flushing);
-  if (ret == GST_FLOW_UNEXPECTED) {
-    GST_CAT_LOG_OBJECT (ts_flow, ts, "got UNEXPECTED from downstream");
+  if (ret == GST_FLOW_EOS) {
+    GST_CAT_LOG_OBJECT (ts_flow, ts, "got GST_FLOW_EOS from downstream");
     /* stop pushing buffers, we pop all buffers until we see an item that we
      * can push again, which is EOS or NEWSEGMENT. If there is nothing in the
      * cache we can push, we set a flag to make the sinkpad refuse more
-     * buffers with an UNEXPECTED return value until we receive something
+     * buffers with an EOS return value until we receive something
      * pushable again or we get flushed. */
     while ((buffer = gst_shifter_cache_pop (ts->cache, ts->is_eos))) {
       GST_CAT_LOG_OBJECT (ts_flow, ts, "dropping UNEXPECTED buffer %p", buffer);
@@ -231,8 +246,8 @@ gst_flutsbase_push_one (GstFluTSBase * ts)
     }
     /* no more items in the cache. Set the unexpected flag so that upstream
      * make us refuse any more buffers on the sinkpad. Since we will still
-     * accept EOS and NEWSEGMENT we return _FLOW_OK to the caller so that the
-     * task function does not shut down. */
+     * accept EOS and NEWSEGMENT we return GST_FLOW_OK to the caller
+     * so that the task function does not shut down. */
     ts->unexpected = TRUE;
     ret = GST_FLOW_OK;
   }
@@ -302,7 +317,7 @@ out_flushing:
         "pause task, reason:  %s", gst_flow_get_name (ts->srcresult));
     /* let app know about us giving up if upstream is not expected to do so */
     /* UNEXPECTED is already taken care of elsewhere */
-    if (eos && (ret == GST_FLOW_NOT_LINKED || ret < GST_FLOW_UNEXPECTED)) {
+    if (eos && (ret == GST_FLOW_NOT_LINKED || ret < GST_FLOW_EOS)) {
       GST_ELEMENT_ERROR (ts, STREAM, FAILED,
           ("Internal data flow error."),
           ("streaming task paused, reason %s (%d)",
@@ -322,7 +337,7 @@ gst_flutsbase_chain (GstPad * pad, GstBuffer * buffer)
 
   GST_CAT_LOG_OBJECT (ts_flow, ts,
       "received buffer %p of size %d, time %" GST_TIME_FORMAT ", duration %"
-      GST_TIME_FORMAT, buffer, GST_BUFFER_SIZE (buffer),
+      GST_TIME_FORMAT, buffer, gst_buffer_get_size (buffer),
       GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)),
       GST_TIME_ARGS (GST_BUFFER_DURATION (buffer)));
 
@@ -376,7 +391,7 @@ out_eos:
     FLOW_MUTEX_UNLOCK (ts);
     gst_buffer_unref (buffer);
 
-    return GST_FLOW_UNEXPECTED;
+    return GST_FLOW_EOS;
   }
 out_unexpected:
   {
@@ -384,7 +399,7 @@ out_unexpected:
     FLOW_MUTEX_UNLOCK (ts);
     gst_buffer_unref (buffer);
 
-    return GST_FLOW_UNEXPECTED;
+    return GST_FLOW_EOS;
   }
 }
 
@@ -511,7 +526,7 @@ gst_flutsbase_handle_sink_event (GstPad * pad, GstEvent * event)
       gst_event_unref (event);
       break;
     }
-    case GST_EVENT_NEWSEGMENT:
+    case GST_EVENT_SEGMENT:
     {
       GST_CAT_LOG_OBJECT (ts_flow, ts, "received newsegment event");
       FLOW_MUTEX_LOCK (ts);
@@ -595,11 +610,6 @@ gst_flutsbase_handle_src_event (GstPad * pad, GstEvent * event)
     }
     case GST_EVENT_QOS:
     {
-      gdouble proportion;
-      GstClockTimeDiff diff;
-      GstClockTime timestamp;
-
-      gst_event_parse_qos (event, &proportion, &diff, &timestamp);
       break;
     }
     case GST_EVENT_CUSTOM_UPSTREAM:
@@ -702,7 +712,7 @@ gst_flutsbase_handle_query (GstElement * element, GstQuery * query)
 
 /* sink currently only operates in push mode */
 static gboolean
-gst_flutsbase_sink_activate_push (GstPad * pad, gboolean active)
+gst_flutsbase_sink_activate_mode (GstPad * pad, gboolean active)
 {
   gboolean ret = TRUE;
   GstFluTSBase *ts;
@@ -734,12 +744,10 @@ gst_flutsbase_sink_activate_push (GstPad * pad, gboolean active)
 /* src operating in push mode, we start a task on the source pad that pushes out
  * buffers from the cache */
 static gboolean
-gst_flutsbase_src_activate_push (GstPad * pad, gboolean active)
+gst_flutsbase_src_activate_mode (GstPad * pad, gboolean active)
 {
+  GstFluTSBase *ts = GST_FLUTSBASE (gst_pad_get_parent (pad));
   gboolean ret = FALSE;
-  GstFluTSBase *ts;
-
-  ts = GST_FLUTSBASE (gst_pad_get_parent (pad));
 
   if (active) {
     FLOW_MUTEX_LOCK (ts);
@@ -944,8 +952,8 @@ gst_flutsbase_add_pads (GstFluTSBase * ts)
 
   gst_pad_set_chain_function (ts->sinkpad,
       GST_DEBUG_FUNCPTR (gst_flutsbase_chain));
-  gst_pad_set_activatepush_function (ts->sinkpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_sink_activate_push));
+  gst_pad_set_activatemode_function (ts->sinkpad,
+      GST_DEBUG_FUNCPTR (gst_flutsbase_sink_activate_mode));
   gst_pad_set_event_function (ts->sinkpad,
       GST_DEBUG_FUNCPTR (gst_flutsbase_handle_sink_event));
   gst_element_add_pad (GST_ELEMENT (ts), ts->sinkpad);
@@ -954,8 +962,8 @@ gst_flutsbase_add_pads (GstFluTSBase * ts)
       gst_pad_new_from_template (gst_element_class_get_pad_template
       (GST_ELEMENT_CLASS (klass), "src"), "src");
 
-  gst_pad_set_activatepush_function (ts->srcpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_src_activate_push));
+  gst_pad_set_activatemode_function (ts->srcpad,
+      GST_DEBUG_FUNCPTR (gst_flutsbase_src_activate_mode));
   gst_pad_set_event_function (ts->srcpad,
       GST_DEBUG_FUNCPTR (gst_flutsbase_handle_src_event));
   gst_pad_set_query_function (ts->srcpad,
