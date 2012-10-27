@@ -1,5 +1,9 @@
 2012-10-27  Josep Torra  <josep@fluendo.com>
 
+	* configure.ac: Back to TRUNK.
+
+2012-10-27  Josep Torra  <josep@fluendo.com>
+
 	* configure.ac:
 	* src/Makefile.am:
 	Minor autotools related cleanups.
