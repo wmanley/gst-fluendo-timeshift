@@ -1,3 +1,8 @@
+2012-10-27  Josep Torra <josep@fluendo.com>
+
+	* src/flutsbase.c: (gst_flutsbase_class_init):
+	Drop missed dead code due last commit. 
+
 2012-10-27  Josep Torra  <josep@fluendo.com>
 
 	* src/flucache.h:

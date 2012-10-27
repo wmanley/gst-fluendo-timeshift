@@ -960,17 +960,6 @@ gst_flutsbase_add_pads (GstFluTSBase * ts)
 }
 
 static void
-gst_flutsbase_base_init (gpointer g_class)
-{
-  GstFluTSBaseClass *ts_class = GST_FLUTSBASE_CLASS (g_class);
-
-  ts_class->collect_time = NULL;
-  ts_class->seek = NULL;
-  ts_class->update_segment = NULL;
-  ts_class->query = NULL;
-}
-
-static void
 gst_flutsbase_class_init (GstFluTSBaseClass * klass)
 {
   GObjectClass *gclass = G_OBJECT_CLASS (klass);
@@ -1006,7 +995,6 @@ gst_flutsbase_class_init (GstFluTSBaseClass * klass)
   eclass->query = GST_DEBUG_FUNCPTR (gst_flutsbase_handle_query);
   eclass->set_index = GST_DEBUG_FUNCPTR (gst_flutsbase_set_index);
   eclass->get_index = GST_DEBUG_FUNCPTR (gst_flutsbase_get_index);
-
 }
 
 static void
