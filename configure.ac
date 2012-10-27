@@ -74,22 +74,11 @@ fi
 dnl Now we're ready to ask for gstreamer libs and cflags
 dnl And we can also ask for the right version of gstreamer
 
-GST_REQ=0.10.0
-GSTPB_REQ=0.10.3
-
-GST_MAJORMINOR=0.10
-
-GSTPB_PLUGINS_DIR=${libdir}/gstreamer-${GST_MAJORMINOR}
-
+AG_GST_DETECT_VERSION([1.0.0], [0.10.3])
 AG_GST_CHECK_GST($GST_MAJORMINOR, [$GST_REQ])
 AG_GST_CHECK_GST_BASE($GST_MAJORMINOR, [$GST_REQ])
-AG_GST_CHECK_GST_PLUGINS_BASE($GST_MAJORMINOR, [$GSTPB_REQ])
-AG_GST_CHECK_GST_CHECK($GST_MAJORMINOR, [$GST_REQ], no)
-
-dnl FIXME: get rid of this by making sure gstreamer-check brings it in
-dnl check for "check", unit testing library/header
-AM_PATH_CHECK(0.9.2, HAVE_CHECK=yes, HAVE_CHECK=no)
-AM_CONDITIONAL(HAVE_CHECK, test "x$HAVE_CHECK" = "xyes")
+AG_GST_CHECK_GST_PLUGINS_BASE($GST_MAJORMINOR, [$GST_REQ])
+GSTPB_PLUGINS_DIR=${libdir}/gstreamer-${GST_MAJORMINOR}
 
 dnl make GST_MAJORMINOR available in Makefile.am
 AC_SUBST(GST_MAJORMINOR)
@@ -114,3 +103,10 @@ common/m4/Makefile
 gst-fluendo-timeshift.spec
 )
 
+echo "
+$PACKAGE-$VERSION
+
+        prefix:                           ${prefix}
+        compiler:                         ${CC}
+        Building for GStreamer-${GST_MAJORMINOR}
+"

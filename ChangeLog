@@ -1,3 +1,9 @@
+2012-10-27  Josep Torra  <josep@fluendo.com>
+
+	* configure.ac:
+	* src/Makefile.am:
+	Minor autotools related cleanups.
+
 2011-10-20  Josep Torra  <josep@fluendo.com>
 
 	Import of the first release.
