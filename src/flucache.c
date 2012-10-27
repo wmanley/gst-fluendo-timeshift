@@ -165,6 +165,10 @@ _slot_meta_free (SlotMeta * meta)
 }
 
 #if GST_CHECK_VERSION (1,0,0)
+
+GType gst_slot_meta_api_get_type (void);
+#define SLOT_META_API_TYPE  (gst_slot_meta_api_get_type())
+
 static void
 gst_slot_meta_init (SlotMeta * meta)
 {
@@ -174,22 +178,36 @@ gst_slot_meta_init (SlotMeta * meta)
 static void
 gst_slot_meta_free (SlotMeta * meta, GstBuffer * buffer)
 {
-  _meta_free (meta);
+  _slot_meta_free (meta);
+}
+
+GType
+gst_slot_meta_api_get_type (void)
+{
+  static volatile GType type;
+  static const gchar *tags[] = { NULL };
+
+  if (g_once_init_enter (&type)) {
+    GType _type = gst_meta_api_type_register ("GstSlotMetaAPI", tags);
+    g_once_init_leave (&type, _type);
+  }
+  return type;
 }
 
 const GstMetaInfo *
 gst_slot_meta_get_info (void)
 {
-  static const GstMetaInfo *slot_meta_info = NULL;
+  static const GstMetaInfo *info = NULL;
 
-  if (slot_meta_info == NULL) {
-    slot_meta_info = gst_meta_register ("SlotMeta", "SlotMeta",
-        sizeof (SlotMeta),
+  if (g_once_init_enter (&info)) {
+    const GstMetaInfo *_info = gst_meta_register (SLOT_META_API_TYPE,
+        "GstSlotMeta", sizeof (SlotMeta),
         (GstMetaInitFunction) gst_slot_meta_init,
         (GstMetaFreeFunction) gst_slot_meta_free,
-        (GstMetaCopyFunction) NULL, (GstMetaTransformFunction) NULL);
+        (GstMetaTransformFunction) NULL);
+    g_once_init_leave (&info, _info);
   }
-  return slot_meta_info;
+  return info;
 }
 
 static GstBuffer *
@@ -198,9 +216,9 @@ gst_slot_buffer_new (GstShifterCache * cache, Slot * slot)
   GstBuffer * buffer = gst_buffer_new ();
   SlotMeta *meta;
 
-  gst_buffer_take_memory (buffer, -1,
+  gst_buffer_append_memory (buffer,
       gst_memory_new_wrapped (GST_MEMORY_FLAG_READONLY,
-          slot->data, NULL, slot->size, 0, slot->size));
+          slot->data, slot->size, 0, slot->size, NULL, NULL));
 
   meta = (SlotMeta *) gst_buffer_add_meta (buffer, SLOT_META_INFO, NULL);
   meta->cache = gst_shifter_cache_ref (cache);
@@ -866,18 +884,18 @@ gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain)
 /**
  * gst_shifter_cache_push:
  * @cache: a #GstShifterCache
- * @buffer: the buffer to be inserted in the cache
+ * @data: pointer to the data to be inserted in the cache
+ * @size: size in bytes of provided data
  *
  * Cache the @buffer and takes ownership of the it.
  *
  */
 
 void
-gst_shifter_cache_push (GstShifterCache * cache, GstBuffer * buffer)
+gst_shifter_cache_push (GstShifterCache * cache, guint8 *data, gsize size)
 {
   Slot *tail;
-  guint8 *data;
-  guint size, avail;
+  gsize avail;
   gboolean is_recording;
 
   GST_CACHE_LOCK (cache);
@@ -887,8 +905,6 @@ gst_shifter_cache_push (GstShifterCache * cache, GstBuffer * buffer)
 #if DEBUG_RINGBUFFER
   dump_cache_state (cache, "pre-push");
 #endif
-  data = GST_BUFFER_DATA (buffer);
-  size = GST_BUFFER_SIZE (buffer);
 
   if (is_recording) {
     gst_shifter_cache_disk_write (cache, data, size);
@@ -922,7 +938,6 @@ gst_shifter_cache_push (GstShifterCache * cache, GstBuffer * buffer)
       }
     }
   }
-  gst_buffer_unref (buffer);
 #if DEBUG_RINGBUFFER
   dump_cache_state (cache, "post-push");
 #endif

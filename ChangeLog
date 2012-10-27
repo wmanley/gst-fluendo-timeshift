@@ -1,3 +1,33 @@
+2012-10-28  Josep Torra  <josep@fluendo.com>
+
+	* src/flucache.c: (gst_slot_meta_free),
+	(gst_slot_meta_api_get_type), (gst_slot_meta_get_info),
+	(gst_slot_buffer_new), (gst_shifter_cache_push):
+	* src/flucache.h:
+	* src/flutimeshift.c:
+	* src/flutsbase.c: (gst_flutsbase_get_type), (gst_flutsbase_pop),
+	(gst_flutsbase_loop), (gst_flutsbase_push), (gst_flutsbase_chain),
+	(gst_flutsbase_handle_seek), (gst_flutsbase_sink_event),
+	(gst_flutsbase_src_event), (gst_flutsbase_query),
+	(gst_flutsbase_sink_activate), (gst_flutsbase_src_activate),
+	(gst_flutsbase_handle_sink_event),
+	(gst_flutsbase_handle_src_event), (gst_flutsbase_handle_src_query),
+	(gst_flutsbase_sink_activate_mode),
+	(gst_flutsbase_src_activate_mode),
+	(gst_flutsbase_sink_activate_push),
+	(gst_flutsbase_src_activate_push), (gst_flutsbase_class_init),
+	(gst_flutsbase_init):
+	* src/flutsbase.h:
+	* src/flutsfake.c: (gst_flufakeshifter_class_init),
+	(gst_flufakeshifter_init):
+	* src/flutsindex.c: (gst_flutsindex_add_id),
+	(gst_flutsindex_get_writer_id), (gst_flutsindex_add_associationv),
+	(gst_flutsindex_get_assoc_entry_full):
+	* src/flutsmpeg.c: (gst_flumpegshifter_collect_time),
+	(gst_flumpegshifter_seek), (gst_flumpegshifter_update_segment),
+	(gst_flumpegshifter_class_init), (gst_flumpegshifter_init):
+	More changes to support 1.0.
+
 2012-10-27  Josep Torra  <josep@fluendo.com>
 
 	* src/flucache.c: (_slot_meta_init), (_slot_meta_free),

@@ -40,7 +40,7 @@ GstShifterCache *gst_shifter_cache_new (gsize size, gchar * filename_template);
 GstShifterCache *gst_shifter_cache_ref (GstShifterCache * cache);
 void gst_shifter_cache_unref (GstShifterCache * cache);
 
-void gst_shifter_cache_push (GstShifterCache * cache, GstBuffer * buffer);
+void gst_shifter_cache_push (GstShifterCache * cache, guint8 *data, gsize size);
 GstBuffer *gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain);
 
 gboolean gst_shifter_cache_has_offset (GstShifterCache * cache, guint64 offset);

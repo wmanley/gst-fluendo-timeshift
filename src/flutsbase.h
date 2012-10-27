@@ -86,16 +86,14 @@ struct _GstFluTSBaseClass
 {
   GstElementClass parent_class;
 
-  void (*collect_time) (GstFluTSBase * base, GstBuffer * buffer);
+  void (*collect_time) (GstFluTSBase * base, guint8 * data, gsize size);
   guint64 (*seek) (GstFluTSBase * base, GstFormat format, GstSeekType type,
       gint64 start);
-  void (*update_segment) (GstFluTSBase * base, GstBuffer * buffer);
+  void (*update_segment) (GstFluTSBase * base, guint8 * data, gsize size);
   gboolean (*query) (GstFluTSBase * base, GstQuery * query);
 };
 
 GType gst_flutsbase_get_type (void);
-
-void gst_flutsbase_add_pads (GstFluTSBase * ts);
 
 G_END_DECLS
 #endif /* __FLUTSBASE_H__ */

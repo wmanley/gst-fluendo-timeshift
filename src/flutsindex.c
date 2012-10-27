@@ -159,7 +159,7 @@ gst_flutsindex_add_id (GstFluTSIndex * index, gint id, gchar * description)
 {
   GstFluTSIndexEntry *entry;
 
-  g_return_val_if_fail (GST_IS_INDEX (index), NULL);
+  g_return_val_if_fail (GST_IS_FLUTSINDEX (index), NULL);
   g_return_val_if_fail (description != NULL, NULL);
 
   if (!GST_FLUTSINDEX_IS_WRITABLE (index) || id == -1)
@@ -206,7 +206,7 @@ gst_flutsindex_get_writer_id (GstFluTSIndex * index, GstObject * writer,
   GstFluTSIndexClass *iclass;
   gboolean success = FALSE;
 
-  g_return_val_if_fail (GST_IS_INDEX (index), FALSE);
+  g_return_val_if_fail (GST_IS_FLUTSINDEX (index), FALSE);
   g_return_val_if_fail (GST_IS_OBJECT (writer), FALSE);
   g_return_val_if_fail (id, FALSE);
 
@@ -267,7 +267,7 @@ gst_flutsindex_add_associationv (GstFluTSIndex * index, gint id,
 
   g_return_val_if_fail (n > 0, NULL);
   g_return_val_if_fail (list != NULL, NULL);
-  g_return_val_if_fail (GST_IS_INDEX (index), NULL);
+  g_return_val_if_fail (GST_IS_FLUTSINDEX (index), NULL);
 
   if (!GST_FLUTSINDEX_IS_WRITABLE (index) || id == -1)
     return NULL;
@@ -349,7 +349,7 @@ gst_flutsindex_get_assoc_entry_full (GstFluTSIndex * index, gint id,
 {
   GstFluTSIndexClass *iclass;
 
-  g_return_val_if_fail (GST_IS_INDEX (index), NULL);
+  g_return_val_if_fail (GST_IS_FLUTSINDEX (index), NULL);
 
   if (id == -1)
     return NULL;

@@ -25,11 +25,11 @@ GST_DEBUG_CATEGORY_EXTERN (ts_mpeg);
 #define gst_flumpegshifter_parent_class parent_class
 G_DEFINE_TYPE (GstFluMPEGShifter, gst_flumpegshifter, GST_FLUTSBASE_TYPE);
 
-static GstStaticPadTemplate flutsmpeg_src_factory =
+static GstStaticPadTemplate src_factory =
 GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS ("video/mpegts"));
 
-static GstStaticPadTemplate flutsmpeg_sink_factory =
+static GstStaticPadTemplate sink_factory =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS ("video/mpegts"));
 
@@ -167,12 +167,11 @@ gst_flumpegshifter_get_pcr (GstFluMPEGShifter * ts, guint8 ** in_data,
 }
 
 static void
-gst_flumpegshifter_collect_time (GstFluTSBase * base, GstBuffer * buffer)
+gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
 {
   GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER_CAST (base);
-  guint8 *data = GST_BUFFER_DATA (buffer);
-  gsize size = GST_BUFFER_SIZE (buffer);
   GstClockTime time;
+  gsize remaining = size;
   guint64 pcr, offset;
 
   /* We can read PCR data only if we know which PCR pid to track */
@@ -185,8 +184,8 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, GstBuffer * buffer)
   }
 
   offset = ts->current_offset;
-  while (size >= TS_MIN_PACKET_SIZE) {
-    pcr = gst_flumpegshifter_get_pcr (ts, &data, &size, &offset);
+  while (remaining >= TS_MIN_PACKET_SIZE) {
+    pcr = gst_flumpegshifter_get_pcr (ts, &data, &remaining, &offset);
     if (pcr != (guint64) -1) {
       /* FIXME: handle wraparounds */
       time = MPEGTIME_TO_GSTTIME (pcr);
@@ -216,8 +215,8 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, GstBuffer * buffer)
         ts->last_time = time;
         goto beach;
       }
-      if (size) {
-        size--;
+      if (remaining) {
+        remaining--;
         data++;
         offset++;
       }
@@ -227,7 +226,7 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, GstBuffer * buffer)
   }
 
 beach:
-  ts->current_offset += GST_BUFFER_SIZE (buffer);
+  ts->current_offset += size;
 }
 
 static guint64
@@ -242,9 +241,11 @@ gst_flumpegshifter_seek (GstFluTSBase * base, GstFormat format,
 
   if (type == GST_SEEK_TYPE_NONE) {
     goto beach;
+#if !GST_CHECK_VERSION (1,0,0)
   } else if (type == GST_SEEK_TYPE_CUR) {
     GST_WARNING_OBJECT (ts, "CUR type not imlemented");
     goto beach;
+#endif
   }
 
   if (format == GST_FORMAT_BYTES) {
@@ -300,11 +301,9 @@ beach:
 }
 
 static void
-gst_flumpegshifter_update_segment (GstFluTSBase * base, GstBuffer * buffer)
+gst_flumpegshifter_update_segment (GstFluTSBase * base, guint8 * data, gsize size)
 {
   GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER_CAST (base);
-  guint8 *data = GST_BUFFER_DATA (buffer);
-  gsize size = GST_BUFFER_SIZE (buffer);
   GstClockTime start = 0, time = 0;
   guint64 pcr, offset = 0;
 
@@ -457,9 +456,9 @@ gst_flumpegshifter_class_init (GstFluMPEGShifterClass * klass)
 
   /* GstElement related stuff */
   gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&flutsmpeg_src_factory));
+      gst_static_pad_template_get (&src_factory));
   gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&flutsmpeg_sink_factory));
+      gst_static_pad_template_get (&sink_factory));
 
   gst_element_class_set_details_simple (element_class,
       "Fluendo Time Shift for MPEG TS streams",
@@ -471,8 +470,6 @@ gst_flumpegshifter_class_init (GstFluMPEGShifterClass * klass)
 static void
 gst_flumpegshifter_init (GstFluMPEGShifter * ts)
 {
-  gst_flutsbase_add_pads (GST_FLUTSBASE (ts));
-
   ts->pcr_pid = INVALID_PID;
   ts->delta = DEFAULT_DELTA;
 
