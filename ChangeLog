@@ -1,5 +1,10 @@
 2012-10-28  Josep Torra  <josep@fluendo.com>
 
+	* src/flucache.c: (slot_available):
+	Fix build in x86_64.
+
+2012-10-28  Josep Torra  <josep@fluendo.com>
+
 	* src/flutsbase.c: (gst_flutsbase_pop), (gst_flutsbase_sink_event),
 	(gst_flutsbase_sink_activate), (gst_flutsbase_change_state):
 	* src/flutsbase.h:

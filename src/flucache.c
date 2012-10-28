@@ -84,7 +84,7 @@ struct _Slot
 };
 
 static inline gboolean
-slot_available (Slot * slot, guint * size)
+slot_available (Slot * slot, gsize * size)
 {
   CacheState state = g_atomic_int_get (&slot->state);
 
