@@ -215,6 +215,14 @@ gst_flutsbase_pop (GstFluTSBase * ts)
   if (!(buffer = gst_shifter_cache_pop (ts->cache, ts->is_eos)))
     goto no_item;
 
+
+  if (ts->stream_start_event) {
+    if (!gst_pad_push_event (ts->srcpad, ts->stream_start_event)) {
+      goto stream_start_failed;
+    }
+    ts->stream_start_event = NULL;
+  }
+
 #if !GST_CHECK_VERSION (1,0,0)
   {
 	  GstCaps *caps;
@@ -253,7 +261,9 @@ gst_flutsbase_pop (GstFluTSBase * ts)
         ts->segment.format, ts->segment.start, -1, ts->segment.time);
 #endif
     if (newsegment) {
-      ret = gst_pad_push_event (ts->srcpad, newsegment);
+      if (!gst_pad_push_event (ts->srcpad, newsegment)) {
+        goto segment_failed;
+      }
     }
     ts->need_newsegment = FALSE;
   }
@@ -306,6 +316,17 @@ no_item:
 out_flushing:
   {
     GST_CAT_LOG_OBJECT (ts_flow, ts, "exit because we are flushing");
+    return GST_FLOW_FLUSHING;
+  }
+segment_failed:
+  {
+    GST_CAT_LOG_OBJECT (ts_flow, ts, "push of SEGMENT event failed");
+    return GST_FLOW_FLUSHING;
+  }
+stream_start_failed:
+  {
+    ts->stream_start_event = NULL;
+    GST_CAT_LOG_OBJECT (ts_flow, ts, "push of STREAM_START event failed");
     return GST_FLOW_FLUSHING;
   }
 }
@@ -632,6 +653,7 @@ gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       gst_flutsbase_start (ts);
 
       FLOW_MUTEX_LOCK (ts);
+      gst_event_replace (&ts->stream_start_event, NULL);
       ts->cur_bytes = 0;
       ts->srcresult = GST_FLOW_OK;
       ts->sinkresult = GST_FLOW_OK;
@@ -647,6 +669,14 @@ gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       FLOW_MUTEX_UNLOCK (ts);
       break;
     }
+#if GST_CHECK_VERSION (1,0,0)
+    case GST_EVENT_STREAM_START:
+    {
+      gst_event_replace (&ts->stream_start_event, event);
+      gst_event_unref (event);
+      break;
+    }
+#endif
     default:
     {
       GST_CAT_LOG_OBJECT (ts_flow, ts, "dropped event %s",
@@ -788,6 +818,7 @@ gst_flutsbase_sink_activate (GstPad * pad, GstObject * parent, gboolean active)
     GST_DEBUG_OBJECT (ts, "deactivating push mode");
     ts->srcresult = GST_FLOW_FLUSHING;
     ts->sinkresult = GST_FLOW_FLUSHING;
+    gst_event_replace (&ts->stream_start_event, NULL);
     FLOW_MUTEX_UNLOCK (ts);
   }
 
@@ -994,6 +1025,7 @@ gst_flutsbase_change_state (GstElement * element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_READY_TO_PAUSED:
       gst_flutsbase_start (ts);
+      gst_event_replace (&ts->stream_start_event, NULL);
       break;
     case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
       break;

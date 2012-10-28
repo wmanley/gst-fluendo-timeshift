@@ -80,6 +80,8 @@ struct _GstFluTSBase
   GstIndex *index;
   gint index_id;
   gboolean own_index;
+
+  GstEvent *stream_start_event;
 };
 
 struct _GstFluTSBaseClass

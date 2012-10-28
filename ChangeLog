@@ -1,5 +1,12 @@
 2012-10-28  Josep Torra  <josep@fluendo.com>
 
+	* src/flutsbase.c: (gst_flutsbase_pop), (gst_flutsbase_sink_event),
+	(gst_flutsbase_sink_activate), (gst_flutsbase_change_state):
+	* src/flutsbase.h:
+	Take care of new STREAM_START event in GStreamer 1.0.
+
+2012-10-28  Josep Torra  <josep@fluendo.com>
+
 	* src/flucache.c: (gst_slot_meta_free),
 	(gst_slot_meta_api_get_type), (gst_slot_meta_get_info),
 	(gst_slot_buffer_new), (gst_shifter_cache_push):
