@@ -169,10 +169,11 @@ _slot_meta_free (SlotMeta * meta)
 GType gst_slot_meta_api_get_type (void);
 #define SLOT_META_API_TYPE  (gst_slot_meta_api_get_type())
 
-static void
-gst_slot_meta_init (SlotMeta * meta)
+static gboolean
+gst_slot_meta_init (SlotMeta * meta, gpointer params, GstBuffer * buffer)
 {
   _slot_meta_init (meta);
+  return TRUE;
 }
 
 static void

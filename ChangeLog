@@ -1,3 +1,10 @@
+2012-11-07  Josep Torra  <josep@fluendo.com>
+
+	* src/flucache.c: (gst_slot_meta_init):
+	Fix the _meta_init function signature that has changed since my
+	early port in 0.11 days.
+	Thanks to Krzysztof Konopko for pointing it and suggest the fix.
+
 2012-10-28  Josep Torra  <josep@fluendo.com>
 
 	* src/flucache.c: (slot_available):
