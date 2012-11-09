@@ -1,3 +1,10 @@
+2012-11-10  Josep Torra  <josep@fluendo.com>
+
+	* src/flucache.c: (gst_slot_buffer_new):
+	* src/flutsbase.c: (gst_flutsbase_pop),
+	(gst_flutsbase_handle_seek):
+	Few more fixes for the 1.0 port.
+
 2012-11-07  Josep Torra  <josep@fluendo.com>
 
 	* src/flucache.c: (gst_slot_meta_init):

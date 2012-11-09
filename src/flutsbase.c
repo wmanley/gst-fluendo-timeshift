@@ -215,6 +215,10 @@ gst_flutsbase_pop (GstFluTSBase * ts)
   if (!(buffer = gst_shifter_cache_pop (ts->cache, ts->is_eos)))
     goto no_item;
 
+  if (ts->srcresult == GST_FLOW_FLUSHING) {
+    gst_buffer_unref (buffer);
+    goto out_flushing;
+  }
 
   if (ts->stream_start_event) {
     if (!gst_pad_push_event (ts->srcpad, ts->stream_start_event)) {
@@ -245,6 +249,7 @@ gst_flutsbase_pop (GstFluTSBase * ts)
       gst_buffer_map (buffer, &map, GST_MAP_READ);
       bclass->update_segment (ts, map.data, map.size);
       gst_buffer_unmap (buffer, &map);
+      GST_BUFFER_TIMESTAMP (buffer) = ts->segment.start;
 #else
       bclass->update_segment (ts, GST_BUFFER_DATA (buffer), GST_BUFFER_SIZE (buffer));
 #endif
@@ -534,11 +539,10 @@ gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
 
   GST_DEBUG_OBJECT (ts, "seeking at offset %" G_GUINT64_FORMAT, offset);
 
-  /* Flush start downstream to make sure loop is idle */
-  gst_pad_push_event (ts->srcpad, gst_event_new_flush_start ());
-
   /* now unblock the loop function */
   FLOW_MUTEX_LOCK (ts);
+  /* Flush start downstream to make sure loop is idle */
+  gst_pad_push_event (ts->srcpad, gst_event_new_flush_start ());
   ts->srcresult = GST_FLOW_FLUSHING;
   /* unblock the loop function */
   FLOW_SIGNAL_ADD (ts);

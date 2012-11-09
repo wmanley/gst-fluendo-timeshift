@@ -218,7 +218,7 @@ gst_slot_buffer_new (GstShifterCache * cache, Slot * slot)
   SlotMeta *meta;
 
   gst_buffer_append_memory (buffer,
-      gst_memory_new_wrapped (GST_MEMORY_FLAG_READONLY,
+      gst_memory_new_wrapped (GST_MEMORY_FLAG_READONLY | GST_MEMORY_FLAG_NO_SHARE,
           slot->data, slot->size, 0, slot->size, NULL, NULL));
 
   meta = (SlotMeta *) gst_buffer_add_meta (buffer, SLOT_META_INFO, NULL);
