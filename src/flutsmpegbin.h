@@ -45,7 +45,7 @@ struct _GstFluMPEGShifterBin
 {
   GstBin parent_instance;
 
-  GstElement * tsparse;
+  GstElement * parser;
   GstElement * timeshifter;
 };
 

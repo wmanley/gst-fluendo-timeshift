@@ -23,11 +23,13 @@
 
 #include "flutsfake.h"
 #include "flutsmpeg.h"
+#include "flutsmpegbin.h"
 
 GST_DEBUG_CATEGORY (ts_base);
 GST_DEBUG_CATEGORY (ts_flow);
 GST_DEBUG_CATEGORY (ts_fake);
 GST_DEBUG_CATEGORY (ts_mpeg);
+GST_DEBUG_CATEGORY (ts_mpeg_bin);
 
 static gboolean
 plugin_init (GstPlugin * plugin)
@@ -44,12 +46,19 @@ plugin_init (GstPlugin * plugin)
   GST_DEBUG_CATEGORY_INIT (ts_mpeg, "flumpegshifter", 0,
       "Fluendo MPEG Time Shifting");
 
+  GST_DEBUG_CATEGORY_INIT (ts_mpeg_bin, "flumpegshifterbin", 0,
+      "Fluendo MPEG Time Shifting bin");
+
   if (!gst_element_register (plugin, "flufakeshifter", GST_RANK_NONE,
           gst_flufakeshifter_get_type ()))
     return FALSE;
 
   if (!gst_element_register (plugin, "flumpegshifter", GST_RANK_NONE,
           gst_flumpegshifter_get_type ()))
+    return FALSE;
+
+  if (!gst_element_register (plugin, "flumpegshifterbin", GST_RANK_NONE,
+          gst_flumpegshifter_bin_get_type ()))
     return FALSE;
 
   return TRUE;
@@ -59,7 +68,7 @@ plugin_init (GstPlugin * plugin)
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR,
     flutimeshift, "Fluendo Time Shift element",
     plugin_init, VERSION, "LGPL", PACKAGE_NAME,
-    "http://www.fluendo.com");
+    "http://www.fluendo.com, http://www.youview.com");
 #else
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR,
     "flutimeshift", "Fluendo Time Shift element",

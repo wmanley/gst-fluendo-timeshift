@@ -29,6 +29,16 @@ G_DEFINE_TYPE (GstFluMPEGShifterBin, gst_flumpegshifter_bin, GST_TYPE_BIN);
 static void
 gst_flumpegshifter_bin_handle_message (GstBin * bin, GstMessage * msg);
 
+static GstStaticPadTemplate srctemplate = GST_STATIC_PAD_TEMPLATE ("src",
+    GST_PAD_SRC,
+    GST_PAD_ALWAYS,
+    GST_STATIC_CAPS ("video/mpegts"));
+
+static GstStaticPadTemplate sinktemplate = GST_STATIC_PAD_TEMPLATE ("sink",
+    GST_PAD_SINK,
+    GST_PAD_ALWAYS,
+    GST_STATIC_CAPS ("video/mpegts"));
+
 static void
 gst_flumpegshifter_bin_class_init (GstFluMPEGShifterBinClass * klass)
 {
@@ -40,11 +50,17 @@ gst_flumpegshifter_bin_class_init (GstFluMPEGShifterBinClass * klass)
   gstelement_class = GST_ELEMENT_CLASS (klass);
   gstbin_class = GST_BIN_CLASS (klass);
 
+  gst_element_class_add_pad_template (gstelement_class,
+      gst_static_pad_template_get (&srctemplate));
+
+  gst_element_class_add_pad_template (gstelement_class,
+      gst_static_pad_template_get (&sinktemplate));
+
   gstbin_class->handle_message =
       GST_DEBUG_FUNCPTR (gst_flumpegshifter_bin_handle_message);
 
   gst_element_class_set_metadata (gstelement_class,
-      "Fluendo Time Shift for MPEG TS streams", "Generic/Bin",
+      "Fluendo Time Shift + TS parser for MPEG TS streams", "Generic/Bin",
       "Provide time shift operations on MPEG TS streams",
       "Krzysztof Konopko <krzysztof.konopko@youview.com>");
 }
@@ -69,15 +85,18 @@ gst_flumpegshifter_bin_init (GstFluMPEGShifterBin * ts_bin)
 {
   GstBin *bin = GST_BIN (ts_bin);
 
-  ts_bin->tsparse = gst_element_factory_make ("mpegtsdemux", "tsparse");
-  ts_bin->timeshifter =
-      gst_element_factory_make ("flutimeshift", "flumpegshifter");
+  ts_bin->parser = gst_element_factory_make ("tsparse", "parser");
+  g_return_if_fail (ts_bin->parser);
 
-  gst_bin_add_many (bin, ts_bin->tsparse, ts_bin->timeshifter, NULL);
-  g_return_if_fail (gst_element_link_many (ts_bin->tsparse, ts_bin->timeshifter,
+  ts_bin->timeshifter =
+      gst_element_factory_make ("flumpegshifter", "timeshifter");
+  g_return_if_fail (ts_bin->timeshifter);
+
+  gst_bin_add_many (bin, ts_bin->parser, ts_bin->timeshifter, NULL);
+  g_return_if_fail (gst_element_link_many (ts_bin->parser, ts_bin->timeshifter,
           NULL));
 
-  mirror_pad (ts_bin->tsparse, "sink", bin);
+  mirror_pad (ts_bin->parser, "sink", bin);
   mirror_pad (ts_bin->timeshifter, "src", bin);
 }
 
