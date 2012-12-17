@@ -229,13 +229,13 @@ gst_flutsbase_pop (GstFluTSBase * ts)
 
 #if !GST_CHECK_VERSION (1,0,0)
   {
-	  GstCaps *caps;
-	  caps = GST_BUFFER_CAPS (buffer);
+    GstCaps *caps;
+    caps = GST_BUFFER_CAPS (buffer);
 
-	  /* set caps before pushing the buffer so that core does not try to do
-	   * something fancy to check if this is possible. */
-	  if (caps && caps != GST_PAD_CAPS (ts->srcpad))
-		gst_pad_set_caps (ts->srcpad, caps);
+    /* set caps before pushing the buffer so that core does not try to do
+     * something fancy to check if this is possible. */
+    if (caps && caps != GST_PAD_CAPS (ts->srcpad))
+    gst_pad_set_caps (ts->srcpad, caps);
   }
 #endif
 
