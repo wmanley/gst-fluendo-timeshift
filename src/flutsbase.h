@@ -21,10 +21,7 @@
 #define __FLUTSBASE_H__
 
 #include "flucache.h"
-
-#if GST_CHECK_VERSION(1,0,0)
 #include "flutsindex.h"
-#endif
 
 G_BEGIN_DECLS
 #define GST_FLUTSBASE_TYPE \

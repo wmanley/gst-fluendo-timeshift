@@ -49,18 +49,8 @@ GST_DEBUG_CATEGORY_EXTERN (ts_flow);
 typedef struct _Slot Slot;
 typedef struct _SlotMeta SlotMeta;
 
-#if GST_CHECK_VERSION (1,0,0)
 #define SLOT_META_INFO  (gst_slot_meta_get_info())
 #define gst_buffer_get_slot_meta(b) ((SlotMeta*)gst_buffer_get_meta((b),SLOT_META_INFO))
-#else
-typedef SlotMeta GstSlotBuffer;
-#define GST_TYPE_SLOT_BUFFER (gst_slot_buffer_get_type())
-#define GST_IS_SLOT_BUFFER(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_SLOT_BUFFER))
-#define GST_SLOT_BUFFER(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_SLOT_BUFFER, GstSlotBuffer))
-#define GST_SLOT_BUFFER_CAST(obj) ((GstSlotBuffer *)(obj))
-
-static GstBufferClass *gst_slot_buffer_parent_class = NULL;
-#endif
 
 typedef enum
 {
@@ -136,11 +126,7 @@ slot_write (Slot * slot, guint8 * data, guint size, guint64 offset)
  */
 struct _SlotMeta
 {
-#if GST_CHECK_VERSION (1,0,0)
   GstMeta meta;
-#else
-  GstBuffer buffer;
-#endif
 
   /* Reference to the cache we belong to */
   GstShifterCache *cache;
@@ -163,8 +149,6 @@ _slot_meta_free (SlotMeta * meta)
   if (meta->cache)
     gst_shifter_cache_unref (meta->cache);
 }
-
-#if GST_CHECK_VERSION (1,0,0)
 
 GType gst_slot_meta_api_get_type (void);
 #define SLOT_META_API_TYPE  (gst_slot_meta_api_get_type())
@@ -230,75 +214,6 @@ gst_slot_buffer_new (GstShifterCache * cache, Slot * slot)
 
   return buffer;
 }
-
-#else
-static void
-gst_slot_buffer_finalize (GstSlotBuffer * buffer)
-{
-  _slot_meta_free (buffer);
-}
-
-static void
-gst_slot_buffer_init (GstSlotBuffer * buffer, gpointer g_class)
-{
-  _slot_meta_init (buffer);
-}
-
-static void
-gst_slot_buffer_class_init (gpointer g_class, gpointer class_data)
-{
-  GstMiniObjectClass *mini_object_class = GST_MINI_OBJECT_CLASS (g_class);
-
-  gst_slot_buffer_parent_class = g_type_class_peek_parent (g_class);
-
-  mini_object_class->finalize =
-      (GstMiniObjectFinalizeFunction) gst_slot_buffer_finalize;
-}
-
-static GType
-gst_slot_buffer_get_type (void)
-{
-  static GType _gst_slot_buffer_type;
-
-  if (G_UNLIKELY (_gst_slot_buffer_type == 0)) {
-    static const GTypeInfo slot_buffer_info = {
-      sizeof (GstBufferClass),
-      NULL,
-      NULL,
-      gst_slot_buffer_class_init,
-      NULL,
-      NULL,
-      sizeof (GstSlotBuffer),
-      0,
-      (GInstanceInitFunc) gst_slot_buffer_init,
-      NULL
-    };
-    _gst_slot_buffer_type = g_type_register_static (GST_TYPE_BUFFER,
-        "GstSlotBuffer", &slot_buffer_info, 0);
-  }
-  return _gst_slot_buffer_type;
-}
-
-static GstBuffer *
-gst_slot_buffer_new (GstShifterCache * cache, Slot * slot)
-{
-  GstSlotBuffer *buffer = NULL;
-
-  buffer = GST_SLOT_BUFFER_CAST (gst_mini_object_new (GST_TYPE_SLOT_BUFFER));
-
-  if (buffer) {
-    buffer->cache = gst_shifter_cache_ref (cache);
-    buffer->slot = slot;
-
-    GST_BUFFER_DATA (buffer) = slot->data;
-    GST_BUFFER_SIZE (buffer) = slot->size;
-    GST_BUFFER_OFFSET (buffer) = slot->offset;
-    GST_BUFFER_OFFSET_END (buffer) = slot->offset + slot->size;
-  }
-
-  return GST_BUFFER_CAST (buffer);
-}
-#endif
 
 /* GstShifterCache */
 
@@ -592,10 +507,6 @@ gst_shifter_cache_new (gsize size, gchar * filename_template)
   cache->slots = (Slot *) g_new (Slot, nslots);
 
   gst_shifter_cache_flush (cache);
-
-#if !GST_CHECK_VERSION (1,0,0)
-  g_type_class_ref (gst_slot_buffer_get_type ());
-#endif
 
   return cache;
 }

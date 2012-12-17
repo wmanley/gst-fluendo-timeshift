@@ -25,14 +25,6 @@
 
 #include <glib/gstdio.h>
 
-#if !GST_CHECK_VERSION(1,0,0)
-#define GST_FLOW_EOS GST_FLOW_UNEXPECTED
-#define GST_FLOW_FLUSHING GST_FLOW_WRONG_STATE
-#define gst_buffer_get_size(buffer) GST_BUFFER_SIZE (buffer)
-#define GST_EVENT_SEGMENT GST_EVENT_NEWSEGMENT
-#define gst_event_new_flush_stop(reset_time) gst_event_new_flush_stop() 
-#endif
-
 GST_DEBUG_CATEGORY_EXTERN (ts_base);
 GST_DEBUG_CATEGORY_EXTERN (ts_flow);
 #define GST_CAT_DEFAULT (ts_base)
@@ -227,44 +219,23 @@ gst_flutsbase_pop (GstFluTSBase * ts)
     ts->stream_start_event = NULL;
   }
 
-#if !GST_CHECK_VERSION (1,0,0)
-  {
-    GstCaps *caps;
-    caps = GST_BUFFER_CAPS (buffer);
-
-    /* set caps before pushing the buffer so that core does not try to do
-     * something fancy to check if this is possible. */
-    if (caps && caps != GST_PAD_CAPS (ts->srcpad))
-    gst_pad_set_caps (ts->srcpad, caps);
-  }
-#endif
-
   if (G_UNLIKELY (ts->need_newsegment)) {
     GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
     GstEvent *newsegment;
 
     if (bclass->update_segment) {
-#if GST_CHECK_VERSION (1,0,0)
       GstMapInfo map;
       gst_buffer_map (buffer, &map, GST_MAP_READ);
       bclass->update_segment (ts, map.data, map.size);
       gst_buffer_unmap (buffer, &map);
       GST_BUFFER_TIMESTAMP (buffer) = ts->segment.start;
-#else
-      bclass->update_segment (ts, GST_BUFFER_DATA (buffer), GST_BUFFER_SIZE (buffer));
-#endif
     } else if (ts->segment.format == GST_FORMAT_BYTES) {
       ts->segment.start = ts->segment.time = GST_BUFFER_OFFSET (buffer);
     }
 
     GST_DEBUG_OBJECT (ts, "pushing segment %" GST_SEGMENT_FORMAT, &ts->segment);
 
-#if GST_CHECK_VERSION (1,0,0)
     newsegment = gst_event_new_segment (&ts->segment);
-#else
-    newsegment = gst_event_new_new_segment (FALSE, ts->segment.rate,
-        ts->segment.format, ts->segment.start, -1, ts->segment.time);
-#endif
     if (newsegment) {
       if (!gst_pad_push_event (ts->srcpad, newsegment)) {
         goto segment_failed;
@@ -451,7 +422,6 @@ out_unexpected:
   }
 }
 
-#if GST_CHECK_VERSION (1,0,0)
 static GstFlowReturn
 gst_flutsbase_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
 {
@@ -473,26 +443,7 @@ gst_flutsbase_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
  
   return res;
 }
-#else
-static GstFlowReturn
-gst_flutsbase_chain (GstPad * pad, GstBuffer * buffer)
-{
-  GstFluTSBase *ts = GST_FLUTSBASE (GST_OBJECT_PARENT (pad));
-  GstFlowReturn res;
 
-  GST_CAT_LOG_OBJECT (ts_flow, ts,
-      "received buffer %p of size %d, time %" GST_TIME_FORMAT ", duration %"
-      GST_TIME_FORMAT, buffer, gst_buffer_get_size (buffer),
-      GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (buffer)),
-      GST_TIME_ARGS (GST_BUFFER_DURATION (buffer)));
-
-  res = gst_flutsbase_push (ts, GST_BUFFER_DATA (buffer), GST_BUFFER_SIZE (buffer));
-
-  gst_buffer_unref (buffer);
- 
-  return res;
-}
-#endif
 static gboolean
 gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
 {
@@ -565,13 +516,8 @@ gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
   ts->is_eos = FALSE;
   ts->unexpected = FALSE;
   ts->need_newsegment = TRUE;
-#if GST_CHECK_VERSION (1,0,0)
   gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
       ts->srcpad, NULL);
-#else
-  gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
-      ts->srcpad);
-#endif
   FLOW_MUTEX_UNLOCK (ts);
   GST_DEBUG_OBJECT (ts, "loop started");
   ret = TRUE;
@@ -663,24 +609,17 @@ gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       ts->sinkresult = GST_FLOW_OK;
       ts->is_eos = FALSE;
       ts->unexpected = FALSE;
-#if GST_CHECK_VERSION (1,0,0)
       gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
           ts->srcpad, NULL);
-#else
-      gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
-          ts->srcpad);
-#endif
       FLOW_MUTEX_UNLOCK (ts);
       break;
     }
-#if GST_CHECK_VERSION (1,0,0)
     case GST_EVENT_STREAM_START:
     {
       gst_event_replace (&ts->stream_start_event, event);
       gst_event_unref (event);
       break;
     }
-#endif
     default:
     {
       GST_CAT_LOG_OBJECT (ts_flow, ts, "dropped event %s",
@@ -844,11 +783,7 @@ gst_flutsbase_src_activate (GstPad * pad, GstObject * parent, gboolean active)
     ts->sinkresult = GST_FLOW_OK;
     ts->is_eos = FALSE;
     ts->unexpected = FALSE;
-#if GST_CHECK_VERSION (1,0,0)
     ret = gst_pad_start_task (pad, (GstTaskFunction) gst_flutsbase_loop, pad, NULL);
-#else
-    ret = gst_pad_start_task (pad, (GstTaskFunction) gst_flutsbase_loop, pad);
-#endif
     FLOW_MUTEX_UNLOCK (ts);
   } else {
     /* unblock loop function */
@@ -866,8 +801,6 @@ gst_flutsbase_src_activate (GstPad * pad, GstObject * parent, gboolean active)
  
   return ret;
 }
-
-#if GST_CHECK_VERSION(1,0,0)
 
 static gboolean
 gst_flutsbase_handle_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
@@ -911,112 +844,6 @@ gst_flutsbase_src_activate_mode (GstPad * pad, GstObject * parent,
   }
   return ret;
 }
-
-#else /* !GST_CHECK_VERSION(1,0,0) */
-
-static gboolean
-gst_flutsbase_handle_sink_event (GstPad * pad, GstEvent * event)
-{
-  GstObject *parent = gst_pad_get_parent (pad);
-  gboolean ret;
-
-  ret = gst_flutsbase_sink_event (pad, parent, event);
-
-  gst_object_unref (parent);
-  return ret;  
-}
-
-static gboolean
-gst_flutsbase_handle_src_event (GstPad * pad, GstEvent * event)
-{
-  GstObject *parent = gst_pad_get_parent (pad);
-  gboolean ret;
-
-  ret = gst_flutsbase_src_event (pad, parent, event);
-
-  gst_object_unref (parent);
-  return ret;
-}
-
-static gboolean
-gst_flutsbase_handle_src_query (GstPad * pad, GstQuery * query)
-{
-  gboolean ret;
-  GstElement * element;
-
-  element = GST_ELEMENT (gst_pad_get_parent (pad));
-  if (G_UNLIKELY (element == NULL))
-    return FALSE;
-
-  ret = gst_flutsbase_query (element, query);
-  
-  gst_object_unref (element);
-  return ret;
-}
-
-static gboolean
-gst_flutsbase_sink_activate_push (GstPad * pad, gboolean active)
-{
-  GstObject *parent = gst_pad_get_parent (pad);
-  gboolean ret;
-
-  ret = gst_flutsbase_sink_activate (pad, parent, active);
-
-  gst_object_unref (parent);
-
-  return ret;
-}
-
-static gboolean
-gst_flutsbase_src_activate_push (GstPad * pad, gboolean active)
-{
-  GstObject *parent = gst_pad_get_parent (pad);
-  gboolean ret;
-
-  ret = gst_flutsbase_src_activate (pad, parent, active);
-
-  gst_object_unref (parent);
-
-  return ret;
-}
-
-static void
-gst_flutsbase_set_index (GstElement * element, GstIndex * index)
-{
-  GstFluTSBase *ts = GST_FLUTSBASE (element);
-
-  GST_OBJECT_LOCK (ts);
-
-  if (ts->index) {
-    gst_object_unref (ts->index);
-  }
-  if (index) {
-    ts->index = gst_object_ref (index);
-    gst_index_get_writer_id (index, GST_OBJECT (element), &ts->index_id);
-    ts->own_index = FALSE;
-  } else {
-    ts->index = NULL;
-  }
-  GST_OBJECT_UNLOCK (ts);
-}
-
-static GstIndex *
-gst_flutsbase_get_index (GstElement * element)
-{
-  GstIndex *ret = NULL;
-  GstFluTSBase *ts = GST_FLUTSBASE (element);
-
-  GST_OBJECT_LOCK (ts);
-
-  if (ts->index) {
-    ret = gst_object_ref (ts->index);
-  }
-
-  GST_OBJECT_UNLOCK (ts);
-
-  return ret;
-}
-#endif
 
 static GstStateChangeReturn
 gst_flutsbase_change_state (GstElement * element, GstStateChange transition)
@@ -1178,11 +1005,6 @@ gst_flutsbase_class_init (GstFluTSBaseClass * klass)
 
   eclass->change_state = GST_DEBUG_FUNCPTR (gst_flutsbase_change_state);
   eclass->query = GST_DEBUG_FUNCPTR (gst_flutsbase_query);
-
-#if !GST_CHECK_VERSION(1,0,0)
-  eclass->set_index = GST_DEBUG_FUNCPTR (gst_flutsbase_set_index);
-  eclass->get_index = GST_DEBUG_FUNCPTR (gst_flutsbase_get_index);
-#endif  
 }
 
 static void
@@ -1194,13 +1016,8 @@ gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass)
 
   gst_pad_set_chain_function (ts->sinkpad,
       GST_DEBUG_FUNCPTR (gst_flutsbase_chain));
-#if GST_CHECK_VERSION(1,0,0)
   gst_pad_set_activatemode_function (ts->sinkpad,
       GST_DEBUG_FUNCPTR (gst_flutsbase_sink_activate_mode));
-#else
-  gst_pad_set_activatepush_function (ts->sinkpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_sink_activate_push));
-#endif
   gst_pad_set_event_function (ts->sinkpad,
       GST_DEBUG_FUNCPTR (gst_flutsbase_handle_sink_event));
   gst_element_add_pad (GST_ELEMENT (ts), ts->sinkpad);
@@ -1209,13 +1026,8 @@ gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass)
       gst_pad_new_from_template (gst_element_class_get_pad_template
       (GST_ELEMENT_CLASS (klass), "src"), "src");
 
-#if GST_CHECK_VERSION(1,0,0)
   gst_pad_set_activatemode_function (ts->srcpad,
       GST_DEBUG_FUNCPTR (gst_flutsbase_src_activate_mode));
-#else
-  gst_pad_set_activatepush_function (ts->srcpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_src_activate_push));
-#endif
   gst_pad_set_event_function (ts->srcpad,
       GST_DEBUG_FUNCPTR (gst_flutsbase_handle_src_event));
   gst_pad_set_query_function (ts->srcpad,
