@@ -1,0 +1,17 @@
+WHAT IT IS
+----------
+
+This is a fork of a 'flutimeshift' GStreamer plugin. It's purpose is to provide
+timeshifting capabilities for a MPEG-TS stream.
+
+WHERE TO START
+--------------
+
+The GStreamer framework website:
+http://gstreamer.freedesktop.org
+
+The plugin fork where these sources come from is maintained here:
+https://github.com/kkonopko/gst-fluendo-timeshift
+
+The origin repository of the plugin can be found here:
+https://core.fluendo.com/gstreamer/svn/trunk/gst-fluendo-timeshift
