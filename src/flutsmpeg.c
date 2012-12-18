@@ -187,8 +187,14 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
   while (remaining >= TS_MIN_PACKET_SIZE) {
     pcr = gst_flumpegshifter_get_pcr (ts, &data, &remaining, &offset);
     if (pcr != (guint64) -1) {
+      gboolean update_segment = FALSE;
       /* FIXME: handle wraparounds */
-      time = MPEGTIME_TO_GSTTIME (pcr);
+      if (!GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
+        /* First time we receive is time zero */
+        ts->base_time = MPEGTIME_TO_GSTTIME (pcr);
+        update_segment = TRUE;
+      }
+      time = MPEGTIME_TO_GSTTIME (pcr) - ts->base_time;
 
       GST_LOG_OBJECT (ts, "found PCR %" G_GUINT64_FORMAT
           "(%" GST_TIME_FORMAT ") at offset %" G_GUINT64_FORMAT
@@ -197,10 +203,10 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
           GST_TIME_ARGS (MPEGTIME_TO_GSTTIME (ts->last_pcr)));
       ts->last_pcr = pcr;
 
-      if (!GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
-        ts->base_time = time;
+      if (update_segment) {
         base->segment.start = time;
       }
+
       if (!GST_CLOCK_TIME_IS_VALID (ts->last_time)) {
         add_index_entry (base, time, offset);
         ts->last_time = time;
@@ -262,13 +268,13 @@ gst_flumpegshifter_seek (GstFluTSBase * base, GstFormat format,
   GST_DEBUG_OBJECT (ts, "seeking at time %" GST_TIME_FORMAT " type %d",
       GST_TIME_ARGS (start), type);
 
-  if (!base->index || !GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
-    GST_DEBUG_OBJECT (ts, "no index or base time");
+  if (!base->index) {
+    GST_DEBUG_OBJECT (ts, "no index");
     goto beach;
   }
 
   if (type == GST_SEEK_TYPE_SET) {
-    pos = start + ts->base_time;
+    pos = start;
   } else if (type == GST_SEEK_TYPE_END) {
     pos = ts->last_time + start;
   }
