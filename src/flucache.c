@@ -23,6 +23,8 @@
 
 #include "flucache.h"
 
+#include <gst/gstfilememallocator.h>
+
 #include <stdio.h>
 #include <glib/gstdio.h>
 #include <string.h>
@@ -67,10 +69,8 @@ struct _Slot
 {
   volatile gint state;
 
-  guint64 offset;
-  guint8 *data;
-  guint8 *wptr;
   guint32 size;
+  GstBuffer *buffer;
 };
 
 static inline gboolean
@@ -80,7 +80,7 @@ slot_available (Slot * slot, gsize * size)
 
   if (state <= STATE_PART) {
     if (size) {
-      *size = CACHE_SLOT_SIZE - (slot->wptr - slot->data);
+      *size = CACHE_SLOT_SIZE - slot->size;
     }
     return TRUE;
   }
@@ -98,13 +98,17 @@ slot_fullness (Slot * slot)
 static inline gboolean
 slot_write (Slot * slot, guint8 * data, guint size, guint64 offset)
 {
-  slot->offset = offset;
-  memcpy (slot->wptr, data, size);
+  GstMapInfo mi;
+
+  GST_BUFFER_OFFSET (slot->buffer) = offset;
+  g_return_val_if_fail (gst_buffer_map (slot->buffer, &mi, GST_MAP_WRITE),
+      FALSE);
+  memcpy (mi.data + slot->size, data, size);
+  gst_buffer_unmap (slot->buffer, &mi);
 #if DEBUG
   GST_LOG ("slot_write size %d", size);
 //  gst_util_dump_mem (data, size);
 #endif
-  slot->wptr += size;
   slot->size += size;
   if (slot->size == CACHE_SLOT_SIZE) {
     g_atomic_int_set (&slot->state, STATE_FULL);
@@ -195,26 +199,6 @@ gst_slot_meta_get_info (void)
   return info;
 }
 
-static GstBuffer *
-gst_slot_buffer_new (GstShifterCache * cache, Slot * slot)
-{
-  GstBuffer * buffer = gst_buffer_new ();
-  SlotMeta *meta;
-
-  gst_buffer_append_memory (buffer,
-      gst_memory_new_wrapped (GST_MEMORY_FLAG_READONLY | GST_MEMORY_FLAG_NO_SHARE,
-          slot->data, slot->size, 0, slot->size, NULL, NULL));
-
-  meta = (SlotMeta *) gst_buffer_add_meta (buffer, SLOT_META_INFO, NULL);
-  meta->cache = gst_shifter_cache_ref (cache);
-  meta->slot = slot;
-
-  GST_BUFFER_OFFSET (buffer) = slot->offset;
-  GST_BUFFER_OFFSET_END (buffer) = slot->offset + slot->size;
-
-  return buffer;
-}
-
 /* GstShifterCache */
 
 struct _GstShifterCache
@@ -233,9 +217,9 @@ struct _GstShifterCache
   gboolean need_discont;
 
   /* ring buffer */
+  GstAllocator *alloc;
   guint nslots;
   volatile gint fslots;         /* number of full slots */
-  guint8 *memory;
   Slot *slots;
 
   guint head;
@@ -286,9 +270,9 @@ dump_cache_state (GstShifterCache * cache, const gchar * title)
   for (i = 0; i < cache->nslots; i++) {
     Slot *slot = &cache->slots[i];
     CacheState state = g_atomic_int_get (&slot->state);
-    GST_LOG ("     %d. %s data %p wptr %p size %" G_GUINT32_FORMAT " offset %"
-        G_GUINT64_FORMAT, i, state_names[state], slot->data, slot->wptr,
-        slot->size, slot->offset);
+    GST_LOG ("     %d. %s buffer %p size %" G_GUINT32_FORMAT " offset %"
+        G_GUINT64_FORMAT, i, state_names[state],
+        slot->buffer, slot->size, GST_BUFFER_OFFSET (slot->buffer));
   }
 }
 
@@ -398,6 +382,7 @@ gst_shifter_cache_disk_read (GstShifterCache * cache, Slot * slot,
 {
   gboolean ret = FALSE;
   gsize size;
+  GstMapInfo mi;
 
   g_return_val_if_fail (cache->file, FALSE);
 
@@ -423,13 +408,20 @@ gst_shifter_cache_disk_read (GstShifterCache * cache, Slot * slot,
     goto beach;
   }
 
-  ret = fread (slot->data, size, 1, cache->file);
+  if (!gst_buffer_map (slot->buffer, &mi, GST_MAP_WRITE)) {
+    goto beach;
+  }
+
+  ret = fread (mi.data, size, 1, cache->file);
   if (ret) {
-    slot->offset = offset;
+    GST_BUFFER_OFFSET (slot->buffer) = offset;
     slot->size = size;
     g_atomic_int_set (&slot->state, STATE_FULL);
     cache->r_dk_pos += size;
   }
+
+  gst_buffer_unmap (slot->buffer, &mi);
+
 #if DEBUG_DISK
   GST_LOG ("post disk_read: dw %" G_GSIZE_FORMAT " dr: %" G_GSIZE_FORMAT,
       cache->w_dk_pos, cache->r_dk_pos);
@@ -447,8 +439,7 @@ gst_shifter_cache_flush (GstShifterCache * cache)
   for (i = 0; i < cache->nslots; i++) {
     Slot *slot = &cache->slots[i];
     slot->state = STATE_EMPTY;
-    slot->offset = INVALID_OFFSET;
-    slot->wptr = slot->data = cache->memory + (i * CACHE_SLOT_SIZE);
+    GST_BUFFER_OFFSET (slot->buffer) = INVALID_OFFSET;
     slot->size = 0;
   }
   cache->head = cache->tail = 0;
@@ -471,6 +462,7 @@ gst_shifter_cache_new (gsize size, gchar * filename_template)
 {
   GstShifterCache *cache;
   guint nslots;
+  int i;
 
   cache = g_new (GstShifterCache, 1);
 
@@ -500,11 +492,18 @@ gst_shifter_cache_new (gsize size, gchar * filename_template)
   gst_shifter_cache_disk_open (cache);
 
   /* Ring buffer */
+  gst_filemem_allocator_init (size, "timeshifter-ringbuffer");
+  cache->alloc = gst_allocator_find ("timeshifter-ringbuffer");
+  g_return_val_if_fail (cache->alloc, NULL);
   nslots = size / CACHE_SLOT_SIZE;
   cache->nslots = nslots;
-  cache->memory = g_malloc (nslots * CACHE_SLOT_SIZE);
 
   cache->slots = (Slot *) g_new (Slot, nslots);
+  for (i = 0; i < cache->nslots; i++) {
+    cache->slots[i].buffer = gst_buffer_new_allocate (
+        cache->alloc, CACHE_SLOT_SIZE, NULL);
+    g_return_val_if_fail (cache->slots[i].buffer, NULL);
+  }
 
   gst_shifter_cache_flush (cache);
 
@@ -531,11 +530,16 @@ gst_shifter_cache_ref (GstShifterCache * cache)
 static void
 gst_shifter_cache_free (GstShifterCache * cache)
 {
+  int i;
+
   gst_shifter_cache_disk_close (cache);
   g_free (cache->filename_template);
   g_free (cache->filename);
 
-  g_free (cache->memory);
+  for (i = 0; i < cache->nslots; i++) {
+    gst_buffer_unref (cache->slots[i].buffer);
+  }
+  gst_object_unref (cache->alloc);
   g_free (cache->slots);
 
   g_mutex_free (cache->lock);
@@ -566,11 +570,10 @@ gst_shifter_cache_recycle (GstShifterCache * cache, Slot * slot)
   recycle = g_atomic_int_compare_and_exchange (&slot->state, STATE_RECYCLE,
       STATE_EMPTY);
   if (recycle) {
-    if (slot->offset != INVALID_OFFSET)
-      cache->l_rb_offset = slot->offset + slot->size;
-    slot->offset = INVALID_OFFSET;
+    if (GST_BUFFER_OFFSET (slot->buffer) != INVALID_OFFSET)
+      cache->l_rb_offset = GST_BUFFER_OFFSET (slot->buffer) + slot->size;
+    GST_BUFFER_OFFSET (slot->buffer) = INVALID_OFFSET;
     slot->size = 0;
-    slot->wptr = slot->data;
   }
   return recycle;
 }
@@ -622,10 +625,13 @@ gst_shifter_cache_migration_thread (GstShifterCache * cache)
     }
 
     if (!FSEEK_FILE (cache->file, cache->m_dk_pos)) {
-      if (fwrite (slot->data, slot->size, 1, cache->file)) {
+      GstMapInfo mi;
+      g_return_if_fail (gst_buffer_map (slot->buffer, &mi, GST_MAP_READ));
+      if (fwrite (mi.data, slot->size, 1, cache->file)) {
         cache->m_dk_pos += slot->size;
         fflush (cache->file);
       }
+      gst_buffer_unmap (slot->buffer, &mi);
     }
     GST_CACHE_UNLOCK (cache);
     if ((i % 8) == 0) {
@@ -725,7 +731,7 @@ gst_shifter_cache_reload (GstShifterCache * cache, gboolean drain)
     gst_shifter_cache_recycle (cache, tail);
     if (gst_shifter_cache_disk_read (cache, tail, cache->h_rb_offset, drain)) {
       cache->tail = (cache->tail + 1) % cache->nslots;
-      cache->h_rb_offset = tail->offset + tail->size;
+      cache->h_rb_offset = GST_BUFFER_OFFSET (tail->buffer) + tail->size;
       g_atomic_int_inc (&cache->fslots);
     } else {
       break;
@@ -759,7 +765,7 @@ gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain)
   if (drain) {
     if (g_atomic_int_compare_and_exchange (&head->state, STATE_PART,
             STATE_FULL)) {
-      cache->h_rb_offset = head->offset + head->size;
+      cache->h_rb_offset = GST_BUFFER_OFFSET (head->buffer) + head->size;
       g_atomic_int_inc (&cache->fslots);
     }
   }
@@ -775,7 +781,9 @@ gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain)
     GST_CACHE_UNLOCK (cache);
 
     g_atomic_int_add (&cache->fslots, -1);
-    buffer = GST_BUFFER_CAST (gst_slot_buffer_new (cache, head));
+    buffer = head->buffer;
+    GST_BUFFER_OFFSET_END (buffer) =
+        GST_BUFFER_OFFSET (head->buffer) + head->size;
     if (cache->need_discont) {
       GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_DISCONT);
       cache->need_discont = FALSE;
@@ -925,8 +933,8 @@ gst_shifter_cache_seek (GstShifterCache * cache, guint64 offset)
     guint seeker = cache->head;
     head = &cache->slots[seeker];
 
-    if (offset >= head->offset) {
-      if (offset < head->offset + head->size) {
+    if (offset >= GST_BUFFER_OFFSET (head->buffer)) {
+      if (offset < GST_BUFFER_OFFSET (head->buffer) + head->size) {
         GST_DEBUG ("found in current head");
         /* Already in the requested position so do nothing */
         gst_shifter_cache_rollback (cache, head);
@@ -938,7 +946,8 @@ gst_shifter_cache_seek (GstShifterCache * cache, guint64 offset)
         gst_shifter_cache_rollforward (cache, head);
         seeker = (seeker + 1) % cache->nslots;
         head = &cache->slots[seeker];
-      } while (!(offset >= head->offset && offset < head->offset + head->size));
+      } while (!(offset >= GST_BUFFER_OFFSET (head->buffer) &&
+          offset < GST_BUFFER_OFFSET (head->buffer) + head->size));
       gst_shifter_cache_rollback (cache, head);
     } else {
       /* perform seek in the past */
@@ -954,7 +963,8 @@ gst_shifter_cache_seek (GstShifterCache * cache, guint64 offset)
           seeker = (seeker + 1) % cache->nslots;
           break;
         }
-      } while (!(offset >= head->offset && offset < head->offset + head->size));
+      } while (!(offset >= GST_BUFFER_OFFSET (head->buffer) &&
+          offset < GST_BUFFER_OFFSET (head->buffer) + head->size));
     }
     cache->head = seeker;
     goto beach;
@@ -1021,7 +1031,8 @@ gst_shifter_cache_fullness (GstShifterCache * cache)
     Slot *head, *tail;
     head = &cache->slots[cache->head];
     tail = &cache->slots[cache->tail];
-    return (tail->offset - head->offset + head->size);
+    return (GST_BUFFER_OFFSET (tail->buffer) - GST_BUFFER_OFFSET (head->buffer)
+        + head->size);
   }
 }
 
