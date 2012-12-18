@@ -36,8 +36,6 @@ GST_STATIC_PAD_TEMPLATE ("sink",
 enum
 {
   PROP_0,
-  PROP_PCR_PID,
-  PROP_DELTA
 };
 
 #define DEFAULT_DELTA           500
@@ -166,6 +164,10 @@ gst_flumpegshifter_get_pcr (GstFluMPEGShifter * ts, guint8 ** in_data,
   return pcr;
 }
 
+/*
+   1. Adds index entries
+   2. Initializes base class segment
+ */
 static void
 gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
 {
@@ -372,76 +374,12 @@ gst_flumpegshifter_query (GstFluTSBase * base, GstQuery * query)
 }
 
 static void
-gst_flumpegshifter_set_property (GObject * object,
-    guint prop_id, const GValue * value, GParamSpec * pspec)
-{
-  GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER (object);
-
-  switch (prop_id) {
-    case PROP_PCR_PID:
-      ts->pcr_pid = g_value_get_int (value);
-      GST_INFO_OBJECT (ts, "configured pcr-pid: %d(%x)",
-          ts->pcr_pid, ts->pcr_pid);
-      break;
-    case PROP_DELTA:
-      ts->delta = g_value_get_int (value);
-      if (ts->delta != -1) {
-        ts->delta *= GST_MSECOND;
-      }
-      break;
-    default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
-      break;
-  }
-}
-
-static void
-gst_flumpegshifter_get_property (GObject * object,
-    guint prop_id, GValue * value, GParamSpec * pspec)
-{
-  GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER (object);
-
-  switch (prop_id) {
-    case PROP_PCR_PID:
-      g_value_set_int (value, ts->pcr_pid);
-      break;
-    case PROP_DELTA:
-      if (ts->delta != -1) {
-        g_value_set_int (value, ts->delta / GST_MSECOND);
-      } else {
-        g_value_set_int (value, -1);
-      }
-      break;
-    default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
-      break;
-  }
-}
-
-static void
 gst_flumpegshifter_class_init (GstFluMPEGShifterClass * klass)
 {
   GstFluTSBaseClass *bclass = GST_FLUTSBASE_CLASS (klass);
   GObjectClass *gclass = G_OBJECT_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
 
-  /* gobject overrides */
-  gclass->set_property = gst_flumpegshifter_set_property;
-  gclass->get_property = gst_flumpegshifter_get_property;
-
-  /* properties */
-  g_object_class_install_property (gclass, PROP_PCR_PID,
-      g_param_spec_int ("pcr-pid", "PCR pid",
-          "Defines the PCR pid to collect the time (-1 = undefined)",
-          INVALID_PID, 0x1fff, INVALID_PID,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gclass, PROP_DELTA,
-      g_param_spec_int ("delta", "Delta",
-          "Delta time between index entries in miliseconds "
-          "(-1 = use random access flag)",
-          -1, 10000, DEFAULT_DELTA,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /* base TS vmethods */
   bclass->collect_time = gst_flumpegshifter_collect_time;
@@ -465,11 +403,4 @@ gst_flumpegshifter_class_init (GstFluMPEGShifterClass * klass)
 static void
 gst_flumpegshifter_init (GstFluMPEGShifter * ts)
 {
-  ts->pcr_pid = INVALID_PID;
-  ts->delta = DEFAULT_DELTA;
-
-  ts->base_time = GST_CLOCK_TIME_NONE;
-  ts->last_pcr = 0;
-  ts->last_time = GST_CLOCK_TIME_NONE;
-  ts->current_offset = 0;
 }

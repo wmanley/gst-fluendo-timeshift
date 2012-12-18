@@ -42,15 +42,6 @@ struct _GstFluMPEGShifter
 {
   GstFluTSBase parent;
 
-  /* Properties */
-  gint16 pcr_pid;
-  GstClockTimeDiff delta;
-
-  /* PCR tracking */
-  guint64 last_pcr;
-  guint64 current_offset;
-  GstClockTime base_time;
-  GstClockTime last_time;
 };
 
 struct _GstFluMPEGShifterClass
