@@ -441,6 +441,45 @@ gst_flutsbase_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   return res;
 }
 
+static guint64_t
+gst_flutsbase_get_bytes_offset(GstFluTSBase * ts, format, start_type, start)
+{
+  guint64_t offset;
+  if (type == GST_SEEK_TYPE_NONE) {
+    offset = -1;
+  } else {
+    switch (format) {
+      case GST_FORMAT_BYTES: {
+        GST_DEBUG_OBJECT (ts, "seeking at bytes %" G_GINT64_FORMAT " type %d",
+            start, type);
+
+        if (type == GST_SEEK_TYPE_SET) {
+          offset = start;
+        } else if (type == GST_SEEK_TYPE_END) {
+          offset = ts->current_offset + start;
+        } else {
+          offset = -1;
+        }
+      }
+      case GST_FORMAT_TIME: {
+        if (bclass->seek) {
+          FLOW_MUTEX_LOCK (ts);
+          offset = bclass->seek (ts, start_type, start);
+          FLOW_MUTEX_UNLOCK (ts);
+        } else {
+          GST_WARNING_OBJECT (ts, "seeking by TIME is not implemented");
+          offset = -1;
+        }
+      }
+      default: {
+        GST_WARNING_OBJECT (ts, "Only seeking in TIME and BYTES supported");
+        offset = -1;
+      }
+    };
+  }
+  return offset;
+}
+
 static gboolean
 gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
 {
@@ -469,16 +508,9 @@ gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
     goto beach;
   }
 
-  if (bclass->seek) {
-    FLOW_MUTEX_LOCK (ts);
-    offset = bclass->seek (ts, format, start_type, start);
-    FLOW_MUTEX_UNLOCK (ts);
-    if (G_UNLIKELY (offset == (guint64) -1)) {
-      GST_WARNING_OBJECT (ts, "seek failed");
-      goto beach;
-    }
-  } else {
-    GST_WARNING_OBJECT (ts, "seeking is not implemented");
+  offset = gst_flutsbase_get_bytes_offset(ts, format, start_type, start);
+  if (G_UNLIKELY (offset == (guint64_t) -1 || !gst_shifter_cache_has_offset (base->cache, offset))) {
+    GST_WARNING_OBJECT (ts, "seek failed");
     goto beach;
   }
 
