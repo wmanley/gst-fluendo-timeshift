@@ -165,8 +165,7 @@ gst_flumpegshifter_get_pcr (GstFluMPEGShifter * ts, guint8 ** in_data,
 }
 
 /*
-   1. Adds index entries
-   2. Initializes base class segment
+   Adds index entries
  */
 static void
 gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
@@ -179,10 +178,6 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
   /* We can read PCR data only if we know which PCR pid to track */
   if (G_UNLIKELY (ts->pcr_pid == INVALID_PID)) {
     goto beach;
-  }
-
-  if (G_UNLIKELY (base->segment.format != GST_FORMAT_TIME)) {
-    gst_segment_init (&base->segment, GST_FORMAT_TIME);
   }
 
   offset = ts->current_offset;
@@ -201,7 +196,6 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
 
       if (!GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
         ts->base_time = time;
-        base->segment.start = time;
       }
       if (!GST_CLOCK_TIME_IS_VALID (ts->last_time)) {
         add_index_entry (base, time, offset);
@@ -303,6 +297,10 @@ gst_flumpegshifter_update_segment (GstFluTSBase * base, guint8 * data, gsize siz
   GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER_CAST (base);
   GstClockTime start = 0, time = 0;
   guint64 pcr, offset = 0;
+
+  if (G_UNLIKELY (base->segment.format != GST_FORMAT_TIME)) {
+    gst_segment_init (&base->segment, GST_FORMAT_TIME);
+  }
 
   pcr = gst_flumpegshifter_get_pcr (ts, &data, &size, &offset);
   if (pcr != (guint64) -1) {
