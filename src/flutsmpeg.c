@@ -165,13 +165,13 @@ gst_flumpegshifter_seek (GstFluTSBase * base,
   GST_DEBUG_OBJECT (ts, "seeking at time %" GST_TIME_FORMAT " type %d",
       GST_TIME_ARGS (start), type);
 
-  if (!base->index || !GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
-    GST_DEBUG_OBJECT (ts, "no index or base time");
+  if (!base->index) {
+    GST_DEBUG_OBJECT (ts, "no index");
     goto beach;
   }
 
   if (type == GST_SEEK_TYPE_SET) {
-    pos = start + ts->base_time;
+    pos = start;
   } else if (type == GST_SEEK_TYPE_END) {
     pos = ts->last_time + start;
   }

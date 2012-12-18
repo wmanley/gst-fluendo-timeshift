@@ -314,7 +314,11 @@ gst_mpegts_indexer_collect_time (GstMpegtsIndexer * mpegtsindexer, guint8 * data
     pcr = gst_flumpegshifter_get_pcr (ts, &data, &remaining, &offset);
     if (pcr != (guint64) -1) {
       /* FIXME: handle wraparounds */
-      time = MPEGTIME_TO_GSTTIME (pcr);
+      if (!GST_CLOCK_TIME_IS_VALID (mpegtsindexer->base_time)) {
+        /* First time we receive is time zero */
+        mpegtsindexer->base_time = MPEGTIME_TO_GSTTIME (pcr);
+      }
+      time = MPEGTIME_TO_GSTTIME (pcr) - mpegtsindexer->base_time;
 
       GST_LOG_OBJECT (ts, "found PCR %" G_GUINT64_FORMAT
           "(%" GST_TIME_FORMAT ") at offset %" G_GUINT64_FORMAT
@@ -323,9 +327,6 @@ gst_mpegts_indexer_collect_time (GstMpegtsIndexer * mpegtsindexer, guint8 * data
           GST_TIME_ARGS (MPEGTIME_TO_GSTTIME (ts->last_pcr)));
       ts->last_pcr = pcr;
 
-      if (!GST_CLOCK_TIME_IS_VALID (mpegtsindexer->base_time)) {
-        mpegtsindexer->base_time = time;
-      }
       if (!GST_CLOCK_TIME_IS_VALID (ts->last_time)) {
         add_index_entry (mpegtsindexer, time, offset);
         ts->last_time = time;
