@@ -45,6 +45,7 @@ enum
   PROP_CACHE_SIZE,
   PROP_RECORDING_TEMPLATE,
   PROP_RECORDING_REMOVE,
+  PROP_INDEX,
   PROP_LAST
 };
 
@@ -86,6 +87,8 @@ enum
 static GstElementClass *parent_class = NULL;
 static void gst_flutsbase_class_init (GstFluTSBaseClass * klass);
 static void gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass);
+static void gst_flutsbase_replace_index(GstFluTSBase * base,
+    GstIndex * new_index, gboolean own);
 
 GType
 gst_flutsbase_get_type (void)
@@ -127,19 +130,13 @@ gst_flutsbase_start (GstFluTSBase * ts)
 
   /* If this is our own index destroy it as the old entries might be wrong */
   if (ts->own_index) {
-    gst_object_unref (ts->index);
-    ts->index = NULL;
-    ts->own_index = FALSE;
+    gst_flutsbase_replace_index(ts, NULL, FALSE);
   }
 
   /* If no index was created, generate one */
   if (G_UNLIKELY (!ts->index)) {
     GST_DEBUG_OBJECT (ts, "no index provided creating our own");
-
-    ts->index = gst_index_factory_make ("memindex");
-
-    gst_index_get_writer_id (ts->index, GST_OBJECT (ts), &ts->index_id);
-    ts->own_index = TRUE;
+    gst_flutsbase_replace_index(ts, gst_index_factory_make ("memindex"), FALSE);
   }
 
   gst_segment_init (&ts->segment, GST_FORMAT_BYTES);
@@ -888,6 +885,24 @@ gst_flutsbase_change_state (GstElement * element, GstStateChange transition)
 }
 
 static void
+gst_flutsbase_replace_index(GstFluTSBase * base,
+    GstIndex * new_index, gboolean own)
+{
+  if (base->index) {
+    gst_object_unref (base->index);
+    base->index = NULL;
+    base->index_id = 0;
+  }
+  if (new_index) {
+    gst_object_ref (new_index);
+    base->index = new_index;
+    gst_index_get_writer_id (base->index, GST_OBJECT (base),
+      &base->index_id);
+    base->own_index = own;
+  }
+}
+
+static void
 gst_flutsbase_set_property (GObject * object,
     guint prop_id, const GValue * value, GParamSpec * pspec)
 {
@@ -909,6 +924,9 @@ gst_flutsbase_set_property (GObject * object,
       if (ts->cache) {
         gst_shifter_cache_set_autoremove (ts->cache, ts->recording_remove);
       }
+      break;
+    case PROP_INDEX:
+      gst_flutsbase_replace_index(ts, g_value_dup_object(value), FALSE);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -936,6 +954,9 @@ gst_flutsbase_get_property (GObject * object,
     case PROP_RECORDING_REMOVE:
       g_value_set_boolean (value, ts->recording_remove);
       break;
+    case PROP_INDEX:
+      g_value_set_object(value, ts->index);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -951,20 +972,12 @@ gst_flutsbase_finalize (GObject * object)
 
   GST_DEBUG_OBJECT (ts, "finalizing tsbase");
 
-  if (ts->cache) {
-    gst_shifter_cache_unref (ts->cache);
-    ts->cache = NULL;
-  }
+  gst_flutsbase_replace_index(ts, NULL, FALSE);
   g_mutex_free (ts->flow_lock);
   g_cond_free (ts->buffer_add);
 
   /* recording_file path cleanup  */
   g_free (ts->recording_template);
-
-  if (ts->index) {
-    gst_object_unref (ts->index);
-    ts->index = NULL;
-  }
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -999,6 +1012,11 @@ gst_flutsbase_class_init (GstFluTSBaseClass * klass)
           "Remove the recorded file after use",
           DEFAULT_RECORDING_REMOVE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (gclass, PROP_INDEX,
+      g_param_spec_object ("index", "Index",
+          "The index into which to write indexing information",
+          GST_TYPE_INDEX, (G_PARAM_READABLE | G_PARAM_WRITABLE)));
 
   /* set several parent class virtual functions */
   gclass->finalize = gst_flutsbase_finalize;
