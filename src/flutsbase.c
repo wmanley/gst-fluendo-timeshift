@@ -376,12 +376,8 @@ gst_flutsbase_push (GstFluTSBase * ts, guint8 * data, gsize size)
     goto out_unexpected;
 
   /* collect time info from that buffer */
-  if (bclass->collect_time) {
-    bclass->collect_time (ts, data, size);
-    /* FIXME: Quick hack, should move this elsewhere: */
-    if (bclass->update_segment) {
-      bclass->update_segment (ts, data, size);
-    }
+  if (bclass->update_segment) {
+    bclass->update_segment (ts, data, size);
   }
   /* add data to the cache */
   gst_shifter_cache_push (ts->cache, data, size);

@@ -67,23 +67,6 @@ is_next_sync_valid (const guint8 * in_data, guint size, guint offset)
   return FALSE;
 }
 
-static inline void
-add_index_entry (GstFluTSBase * base, GstClockTime time, guint64 offset)
-{
-  GstIndexAssociation associations[2];
-
-  GST_LOG_OBJECT (base, "adding association %" GST_TIME_FORMAT "-> %"
-      G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
-  associations[0].format = GST_FORMAT_TIME;
-  associations[0].value = time;
-  associations[1].format = GST_FORMAT_BYTES;
-  associations[1].value = offset;
-
-  gst_index_add_associationv (base->index, base->index_id,
-      GST_ASSOCIATION_FLAG_NONE, 2,
-      (const GstIndexAssociation *) &associations);
-}
-
 static inline guint64
 gst_flumpegshifter_parse_pcr (GstFluMPEGShifter * ts, guint8 * data)
 {
@@ -162,67 +145,6 @@ gst_flumpegshifter_get_pcr (GstFluMPEGShifter * ts, guint8 ** in_data,
     }
   }
   return pcr;
-}
-
-/*
-   Adds index entries
- */
-static void
-gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
-{
-  GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER_CAST (base);
-  GstClockTime time;
-  gsize remaining = size;
-  guint64 pcr, offset;
-
-  /* We can read PCR data only if we know which PCR pid to track */
-  if (G_UNLIKELY (ts->pcr_pid == INVALID_PID)) {
-    goto beach;
-  }
-
-  offset = ts->current_offset;
-  while (remaining >= TS_MIN_PACKET_SIZE) {
-    pcr = gst_flumpegshifter_get_pcr (ts, &data, &remaining, &offset);
-    if (pcr != (guint64) -1) {
-      /* FIXME: handle wraparounds */
-      time = MPEGTIME_TO_GSTTIME (pcr);
-
-      GST_LOG_OBJECT (ts, "found PCR %" G_GUINT64_FORMAT
-          "(%" GST_TIME_FORMAT ") at offset %" G_GUINT64_FORMAT
-          " and last pcr was %" G_GUINT64_FORMAT "(%" GST_TIME_FORMAT
-          ")", pcr, GST_TIME_ARGS (time), offset, ts->last_pcr,
-          GST_TIME_ARGS (MPEGTIME_TO_GSTTIME (ts->last_pcr)));
-      ts->last_pcr = pcr;
-
-      if (!GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
-        ts->base_time = time;
-      }
-      if (!GST_CLOCK_TIME_IS_VALID (ts->last_time)) {
-        add_index_entry (base, time, offset);
-        ts->last_time = time;
-        goto beach;
-      } else if (ts->delta == -1) {
-        add_index_entry (base, time, offset);
-        ts->last_time = time;
-        goto beach;
-      } else if (ts->delta != -1 &&
-          GST_CLOCK_DIFF (ts->last_time, time) >= ts->delta) {
-        add_index_entry (base, time, offset);
-        ts->last_time = time;
-        goto beach;
-      }
-      if (remaining) {
-        remaining--;
-        data++;
-        offset++;
-      }
-    } else {
-      goto beach;
-    }
-  }
-
-beach:
-  ts->current_offset += size;
 }
 
 static guint64
