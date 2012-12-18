@@ -269,6 +269,7 @@ gboolean gst_flutsindex_entry_assoc_map (GstFluTSIndexEntry * entry,
     GstFormat format, gint64 * value);
 
 #define GstIndex GstFluTSIndex
+#define GST_TYPE_INDEX GST_TYPE_FLUTSINDEX
 #define GstIndexEntry GstFluTSIndexEntry
 #define GstIndexAssociation GstFluTSIndexAssociation
 
