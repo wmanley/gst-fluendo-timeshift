@@ -223,7 +223,7 @@ gst_flutsbase_pop (GstFluTSBase * ts)
     if (bclass->update_segment) {
       GstMapInfo map;
       gst_buffer_map (buffer, &map, GST_MAP_READ);
-      bclass->update_segment (ts, map.data, map.size);
+      bclass->update_segment (ts, map.data, map.size, &ts->segment);
       gst_buffer_unmap (buffer, &map);
       GST_BUFFER_TIMESTAMP (buffer) = ts->segment.start;
     } else if (ts->segment.format == GST_FORMAT_BYTES) {
@@ -374,7 +374,7 @@ gst_flutsbase_push (GstFluTSBase * ts, guint8 * data, gsize size)
 
   /* collect time info from that buffer */
   if (bclass->update_segment) {
-    bclass->update_segment (ts, data, size);
+    bclass->update_segment (ts, data, size, &ts->segment);
   }
   /* add data to the cache */
   gst_shifter_cache_push (ts->cache, data, size);

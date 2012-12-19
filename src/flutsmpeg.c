@@ -240,14 +240,15 @@ beach:
 }
 
 static void
-gst_flumpegshifter_update_segment (GstFluTSBase * base, guint8 * data, gsize size)
+gst_flumpegshifter_update_segment (GstFluTSBase * base, guint8 * data,
+    gsize size, GstSegment * segment)
 {
   GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER_CAST (base);
   GstClockTime start = 0, time = 0;
   guint64 pcr, offset = 0;
 
-  if (G_UNLIKELY (base->segment.format != GST_FORMAT_TIME)) {
-    gst_segment_init (&base->segment, GST_FORMAT_TIME);
+  if (G_UNLIKELY (segment->format != GST_FORMAT_TIME)) {
+    gst_segment_init (segment, GST_FORMAT_TIME);
   }
 
   pcr = gst_flumpegshifter_get_pcr (ts, &data, &size, &offset);
@@ -262,8 +263,8 @@ gst_flumpegshifter_update_segment (GstFluTSBase * base, guint8 * data, gsize siz
     GST_LOG_OBJECT (ts, "found PCR %" G_GUINT64_FORMAT "(%" GST_TIME_FORMAT
         ") at offset %" G_GUINT64_FORMAT " position %" GST_TIME_FORMAT,
         pcr, GST_TIME_ARGS (start), offset, GST_TIME_ARGS (time));
-    base->segment.start = start;
-    base->segment.time = time;
+    segment.start = start;
+    segment.time = time;
   }
 }
 
