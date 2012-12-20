@@ -44,6 +44,7 @@ void gst_shifter_cache_push (GstShifterCache * cache, guint8 *data, gsize size);
 GstBuffer *gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain);
 
 gboolean gst_shifter_cache_has_offset (GstShifterCache * cache, guint64 offset);
+guint64 gst_shifter_cache_get_total_bytes_received(GstShifterCache * cache);
 gboolean gst_shifter_cache_seek (GstShifterCache * cache, guint64 offset);
 
 gboolean gst_shifter_cache_start_recording (GstShifterCache * cache);
