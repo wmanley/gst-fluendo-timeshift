@@ -500,9 +500,12 @@ gst_shifter_cache_new (gsize size, gchar * filename_template)
 
   cache->slots = (Slot *) g_new (Slot, nslots);
   for (i = 0; i < cache->nslots; i++) {
-    cache->slots[i].buffer = gst_buffer_new_allocate (
-        cache->alloc, CACHE_SLOT_SIZE, NULL);
-    g_return_val_if_fail (cache->slots[i].buffer, NULL);
+    GstBuffer *buf = gst_buffer_new_allocate (
+       cache->alloc, CACHE_SLOT_SIZE, NULL);
+
+    g_return_val_if_fail (buf, NULL);
+
+    cache->slots[i].buffer = buf;
   }
 
   gst_shifter_cache_flush (cache);
@@ -781,7 +784,7 @@ gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain)
     GST_CACHE_UNLOCK (cache);
 
     g_atomic_int_add (&cache->fslots, -1);
-    buffer = head->buffer;
+    buffer = gst_buffer_copy (head->buffer);
     GST_BUFFER_OFFSET_END (buffer) =
         GST_BUFFER_OFFSET (head->buffer) + head->size;
     if (cache->need_discont) {
