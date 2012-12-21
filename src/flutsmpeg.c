@@ -236,10 +236,45 @@ beach:
 }
 
 static guint64
+gst_flumpegshifter_get_duration_bytes (GstFluTSBase * base)
+{
+  return gst_shifter_cache_get_total_bytes_received(base->cache);
+}
+
+static GstClockTime
+gst_flumpegshifter_get_last_time (GstFluTSBase * base)
+{
+  if (!base->index) {
+    GST_DEBUG_OBJECT (base, "no index");
+    return GST_CLOCK_TIME_NONE;
+  }
+  else {
+    gint64 time;
+    gint64 offset;
+    GstIndexEntry *entry = NULL;
+    guint64 len = gst_flumpegshifter_get_duration_bytes(base);
+
+    entry = gst_index_get_assoc_entry (base->index, base->index_id,
+        GST_INDEX_LOOKUP_BEFORE, GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES, len);
+
+    if (entry) {
+      gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
+      gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &time);
+
+      GST_DEBUG_OBJECT (base, "found index entry at %" GST_TIME_FORMAT " pos %"
+          G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
+      return time;
+    }
+    else {
+      return GST_CLOCK_TIME_NONE;
+    }
+  }
+}
+
+static guint64
 gst_flumpegshifter_seek (GstFluTSBase * base,
     GstSeekType type, gint64 start)
 {
-  GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER_CAST (base);
   GstIndexEntry *entry = NULL;
   gint64 offset = -1;
   gint64 time;
@@ -250,21 +285,21 @@ gst_flumpegshifter_seek (GstFluTSBase * base,
     goto beach;
   }
 
-  GST_DEBUG_OBJECT (ts, "seeking at time %" GST_TIME_FORMAT " type %d",
+  GST_DEBUG_OBJECT (base, "seeking at time %" GST_TIME_FORMAT " type %d",
       GST_TIME_ARGS (start), type);
 
   if (!base->index) {
-    GST_DEBUG_OBJECT (ts, "no index");
+    GST_DEBUG_OBJECT (base, "no index");
     goto beach;
   }
 
   if (type == GST_SEEK_TYPE_SET) {
     pos = start;
   } else if (type == GST_SEEK_TYPE_END) {
-    pos = ts->last_time + start;
+    pos = gst_flumpegshifter_get_last_time(base) + start;
   }
 
-  GST_DEBUG_OBJECT (ts, "seek in index for %" GST_TIME_FORMAT,
+  GST_DEBUG_OBJECT (base, "seek in index for %" GST_TIME_FORMAT,
       GST_TIME_ARGS (pos));
 
   /* Let's check if we have an index entry for that seek time */
@@ -275,7 +310,7 @@ gst_flumpegshifter_seek (GstFluTSBase * base,
     gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
     gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &time);
 
-    GST_DEBUG_OBJECT (ts, "found index entry at %" GST_TIME_FORMAT " pos %"
+    GST_DEBUG_OBJECT (base, "found index entry at %" GST_TIME_FORMAT " pos %"
         G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
   }
 
