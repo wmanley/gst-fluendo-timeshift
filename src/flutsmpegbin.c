@@ -34,7 +34,7 @@ enum
 {
   PROP_0,
   PROP_CACHE_SIZE,
-  PROP_RECORDING_TEMPLATE,
+  PROP_TEMP_TEMPLATE,
   PROP_LAST
 };
 
@@ -63,9 +63,9 @@ gst_flumpegshifter_bin_set_property (GObject * object,
           "cache-size", value);
       break;
 
-    case PROP_RECORDING_TEMPLATE:
+    case PROP_TEMP_TEMPLATE:
       g_object_set_property (G_OBJECT (ts_bin->timeshifter),
-          "recording-template", value);
+          "temp-template", value);
       break;
 
     default:
@@ -86,9 +86,9 @@ gst_flumpegshifter_bin_get_property (GObject * object,
           "cache-size", value);
       break;
 
-    case PROP_RECORDING_TEMPLATE:
+    case PROP_TEMP_TEMPLATE:
       g_object_set_property (G_OBJECT (ts_bin->timeshifter),
-          "recording-template", value);
+          "temp-template", value);
       break;
 
     default:
@@ -118,10 +118,10 @@ gst_flumpegshifter_bin_class_init (GstFluMPEGShifterBinClass * klass)
           DEFAULT_MIN_CACHE_SIZE, G_MAXUINT64, DEFAULT_CACHE_SIZE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gobject_class, PROP_RECORDING_TEMPLATE,
-      g_param_spec_string ("recording-template", "Recording File Template",
-          "File template to store recorded files in, should contain directory "
-          "and a prefix filename. (NULL == disabled)",
+  g_object_class_install_property (gobject_class, PROP_TEMP_TEMPLATE,
+      g_param_spec_string ("temp-template", "File Template",
+          "File template for temporary storage, should contain directory "
+          "and a prefix filename.",
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   gst_element_class_add_pad_template (gstelement_class,
