@@ -187,12 +187,10 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
   while (remaining >= TS_MIN_PACKET_SIZE) {
     pcr = gst_flumpegshifter_get_pcr (ts, &data, &remaining, &offset);
     if (pcr != (guint64) -1) {
-      gboolean update_segment = FALSE;
       /* FIXME: handle wraparounds */
       if (!GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
         /* First time we receive is time zero */
         ts->base_time = MPEGTIME_TO_GSTTIME (pcr);
-        update_segment = TRUE;
       }
       time = MPEGTIME_TO_GSTTIME (pcr) - ts->base_time;
 
@@ -202,10 +200,6 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
           ")", pcr, GST_TIME_ARGS (time), offset, ts->last_pcr,
           GST_TIME_ARGS (MPEGTIME_TO_GSTTIME (ts->last_pcr)));
       ts->last_pcr = pcr;
-
-      if (update_segment) {
-        base->segment.start = time;
-      }
 
       if (!GST_CLOCK_TIME_IS_VALID (ts->last_time)) {
         add_index_entry (base, time, offset);
