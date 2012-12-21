@@ -312,30 +312,6 @@ beach:
   return offset;
 }
 
-static void
-gst_flumpegshifter_update_segment (GstFluTSBase * base, guint8 * data, gsize size)
-{
-  GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER_CAST (base);
-  GstClockTime time = 0;
-  guint64 pcr, offset = 0;
-
-  pcr = gst_flumpegshifter_get_pcr (ts, &data, &size, &offset);
-  if (pcr != (guint64) -1) {
-    /* FIXME: handle wraparounds */
-    time = MPEGTIME_TO_GSTTIME (pcr);
-
-    if (GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
-      time -= ts->base_time;
-    }
-
-    GST_LOG_OBJECT (ts, "found PCR %" G_GUINT64_FORMAT "(%" GST_TIME_FORMAT
-        ") at offset %" G_GUINT64_FORMAT " position %" GST_TIME_FORMAT,
-        pcr, GST_TIME_ARGS (time), offset, GST_TIME_ARGS (time));
-    base->segment.start = time;
-    base->segment.time = time;
-  }
-}
-
 static gboolean
 gst_flumpegshifter_query (GstFluTSBase * base, GstQuery * query)
 {
@@ -463,7 +439,6 @@ gst_flumpegshifter_class_init (GstFluMPEGShifterClass * klass)
   /* base TS vmethods */
   bclass->collect_time = gst_flumpegshifter_collect_time;
   bclass->seek = gst_flumpegshifter_seek;
-  bclass->update_segment = gst_flumpegshifter_update_segment;
   bclass->query = gst_flumpegshifter_query;
 
   /* GstElement related stuff */
