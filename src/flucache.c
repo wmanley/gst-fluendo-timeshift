@@ -29,21 +29,10 @@
 #include <glib/gstdio.h>
 #include <string.h>
 
-#ifdef G_OS_WIN32
-#include <io.h>                 /* lseek, open, close, read */
-#undef lseek
-#define lseek _lseeki64
-#undef off_t
-#define off_t guint64
-#else
-#include <unistd.h>
-#endif
-
 GST_DEBUG_CATEGORY_EXTERN (ts_flow);
 #define GST_CAT_DEFAULT (ts_flow)
 
 #define DEBUG 0
-#define DEBUG_DISK 0
 #define DEBUG_RINGBUFFER 0
 
 #define INVALID_OFFSET ((guint64) -1)
@@ -210,9 +199,6 @@ struct _GstShifterCache
   guint64 h_offset;             /* highest offset */
   guint64 l_rb_offset;          /* lowest offset in the ringbuffer */
   guint64 h_rb_offset;          /* highest offset in the ringbuffer (FULL slots) */
-  guint64 l_dk_offset;          /* lowest offset in the disk */
-  guint64 h_dk_offset;          /* highest offset in the disk */
-  guint64 m_dk_offset;          /* offset migrated to the disk */
 
   gboolean need_discont;
 
@@ -224,21 +210,6 @@ struct _GstShifterCache
 
   guint head;
   guint tail;
-
-  /* disk */
-  FILE *file;
-  gchar *filename_template;
-  gchar *filename;
-  gboolean autoremove;
-  gsize w_dk_pos;               /* disk position in bytes where data is written */
-  gsize r_dk_pos;               /* disk position in bytes where data is read */
-  gsize m_dk_pos;               /* disk position in bytes where data is migratted */
-
-  gboolean is_recording;
-  gboolean is_rb_migrated;
-  gboolean stop_recording;
-
-  GThread *thread;              /* thread for async migration */
 
   GstClockTime mtime;           /* timestamp when migration started */
 };
@@ -262,10 +233,9 @@ dump_cache_state (GstShifterCache * cache, const gchar * title)
       title, cache->head, cache->tail, cache->nslots,
       g_atomic_int_get (&cache->fslots));
   GST_DEBUG ("     h_rb_offset %" G_GUINT64_FORMAT " l_rb_offset %"
-      G_GUINT64_FORMAT " h_offset %" G_GUINT64_FORMAT " h_dk_offset %"
-      G_GUINT64_FORMAT " l_dk_offset %" G_GUINT64_FORMAT,
+      G_GUINT64_FORMAT " h_offset %" G_GUINT64_FORMAT,
       cache->h_rb_offset, cache->l_rb_offset,
-      cache->h_offset, cache->h_dk_offset, cache->l_dk_offset);
+      cache->h_offset);
 
   for (i = 0; i < cache->nslots; i++) {
     Slot *slot = &cache->slots[i];
@@ -274,162 +244,6 @@ dump_cache_state (GstShifterCache * cache, const gchar * title)
         G_GUINT64_FORMAT, i, state_names[state],
         slot->buffer, slot->size, GST_BUFFER_OFFSET (slot->buffer));
   }
-}
-
-static inline gboolean
-gst_shifter_cache_disk_open (GstShifterCache * cache)
-{
-  gint fd = -1;
-  gchar *name = NULL;
-
-  if (cache->file)
-    return TRUE;
-
-  if (cache->filename_template == NULL)
-    return FALSE;
-
-  /* make copy of the template, we don't want to change this */
-  name = g_strdup (cache->filename_template);
-  fd = g_mkstemp (name);
-  if (fd == -1)
-    return FALSE;
-
-  GST_CACHE_LOCK (cache);
-  /* open the file for update/writing */
-  cache->file = fdopen (fd, "wb+");
-  GST_CACHE_UNLOCK (cache);
-  /* error creating file */
-  if (cache->file == NULL) {
-    g_free (name);
-    if (fd != -1)
-      close (fd);
-    return FALSE;
-  }
-
-  g_free (cache->filename);
-  cache->filename = name;
-
-  return TRUE;
-}
-
-static inline void
-gst_shifter_cache_disk_close (GstShifterCache * cache)
-{
-  /* nothing to do */
-  GST_CACHE_LOCK (cache);
-  if (cache->file == NULL) {
-    goto beach;
-  }
-  fflush (cache->file);
-  fclose (cache->file);
-  if (cache->autoremove) {
-    remove (cache->filename);
-    g_free (cache->filename);
-    cache->filename = NULL;
-  }
-  cache->file = NULL;
-beach:
-  GST_CACHE_UNLOCK (cache);
-}
-
-#ifdef HAVE_FSEEKO
-#define FSEEK_FILE(file,offset)  (fseeko (file, (off_t) offset, SEEK_SET) != 0)
-#elif defined (G_OS_UNIX) || defined (G_OS_WIN32)
-#define FSEEK_FILE(file,offset)  (lseek (fileno (file), (off_t) offset, SEEK_SET) == (off_t) -1)
-#else
-#define FSEEK_FILE(file,offset)  (fseek (file, (long) offset, SEEK_SET) != 0)
-#endif
-
-static inline gboolean
-gst_shifter_cache_disk_write (GstShifterCache * cache, guint8 * data,
-    guint size)
-{
-  gboolean ret = FALSE;
-
-  g_return_val_if_fail (cache->file, FALSE);
-
-  GST_CACHE_LOCK (cache);
-
-#if DEBUG_DISK
-  GST_LOG ("pre  disk_write: dw %" G_GSIZE_FORMAT " dr: %" G_GSIZE_FORMAT,
-      cache->w_dk_pos, cache->r_dk_pos);
-#endif
-
-  if (FSEEK_FILE (cache->file, cache->w_dk_pos)) {
-    goto beach;
-  }
-  ret = fwrite (data, size, 1, cache->file);
-  if (ret) {
-    cache->w_dk_pos += size;
-  }
-  fflush (cache->file);
-  cache->h_offset += size;
-  cache->h_dk_offset = cache->h_offset;
-
-#if DEBUG_DISK
-  GST_LOG ("post disk_write: dw %" G_GSIZE_FORMAT " dr: %" G_GSIZE_FORMAT,
-      cache->w_dk_pos, cache->r_dk_pos);
-#endif
-
-beach:
-  GST_CACHE_UNLOCK (cache);
-  return ret;
-}
-
-static inline gboolean
-gst_shifter_cache_disk_read (GstShifterCache * cache, Slot * slot,
-    guint64 offset, gboolean drain)
-{
-  gboolean ret = FALSE;
-  gsize size;
-  GstMapInfo mi;
-
-  g_return_val_if_fail (cache->file, FALSE);
-
-  size = MIN (cache->w_dk_pos - cache->r_dk_pos, CACHE_SLOT_SIZE);
-
-#if DEBUG_DISK
-  GST_LOG ("pre  disk_read: dw %" G_GSIZE_FORMAT " dr: %" G_GSIZE_FORMAT,
-      cache->w_dk_pos, cache->r_dk_pos);
-#endif
-
-  if (G_UNLIKELY (size == 0)) {
-    return FALSE;
-  }
-
-  if (!drain && size < CACHE_SLOT_SIZE)
-    return FALSE;
-
-  if (!slot_available (slot, NULL))
-    return FALSE;
-
-  GST_CACHE_LOCK (cache);
-  if (FSEEK_FILE (cache->file, cache->r_dk_pos)) {
-    goto beach;
-  }
-
-  if (!gst_buffer_map (slot->buffer, &mi, GST_MAP_WRITE)) {
-    goto beach;
-  }
-
-  ret = fread (mi.data, size, 1, cache->file);
-  if (ret) {
-    GST_BUFFER_OFFSET (slot->buffer) = offset;
-    slot->size = size;
-    g_atomic_int_set (&slot->state, STATE_FULL);
-    cache->r_dk_pos += size;
-  }
-
-  gst_buffer_unmap (slot->buffer, &mi);
-
-#if DEBUG_DISK
-  GST_LOG ("post disk_read: dw %" G_GSIZE_FORMAT " dr: %" G_GSIZE_FORMAT,
-      cache->w_dk_pos, cache->r_dk_pos);
-#endif
-
-beach:
-  GST_CACHE_UNLOCK (cache);
-  return ret;
 }
 
 static inline void
@@ -473,23 +287,6 @@ gst_shifter_cache_new (gsize size, gchar * filename_template)
   cache->h_offset = 0;
   cache->l_rb_offset = 0;
   cache->h_rb_offset = 0;
-  cache->l_dk_offset = INVALID_OFFSET;
-  cache->h_dk_offset = INVALID_OFFSET;
-  cache->m_dk_offset = INVALID_OFFSET;
-
-  /* Disk */
-  cache->file = NULL;
-  cache->filename_template = g_strdup (filename_template);
-  cache->filename = NULL;
-  cache->autoremove = TRUE;
-  cache->w_dk_pos = 0;
-  cache->r_dk_pos = 0;
-  cache->m_dk_pos = 0;
-  cache->is_recording = FALSE;
-  cache->is_rb_migrated = FALSE;
-  cache->stop_recording = FALSE;
-  cache->thread = NULL;
-  gst_shifter_cache_disk_open (cache);
 
   /* Ring buffer */
   gst_filemem_allocator_init (size, "timeshifter-ringbuffer");
@@ -534,10 +331,6 @@ static void
 gst_shifter_cache_free (GstShifterCache * cache)
 {
   int i;
-
-  gst_shifter_cache_disk_close (cache);
-  g_free (cache->filename_template);
-  g_free (cache->filename);
 
   for (i = 0; i < cache->nslots; i++) {
     gst_buffer_unref (cache->slots[i].buffer);
@@ -609,139 +402,6 @@ gst_shifter_cache_rollforward (GstShifterCache * cache, Slot * slot)
   return rollforward;
 }
 
-static void
-gst_shifter_cache_migration_thread (GstShifterCache * cache)
-{
-  guint i, j = cache->tail;
-
-  for (i = 0; i < cache->nslots; i++) {
-    Slot *slot = &cache->slots[j];
-    j = (j + 1) % cache->nslots;
-    if (g_atomic_int_get (&slot->state) == STATE_EMPTY) {
-      continue;
-    }
-
-    GST_CACHE_LOCK (cache);
-    if (G_UNLIKELY (cache->stop_recording && cache->autoremove)) {
-      GST_INFO ("ring buffer migration aborted");
-      goto beach;
-    }
-
-    if (!FSEEK_FILE (cache->file, cache->m_dk_pos)) {
-      GstMapInfo mi;
-      g_return_if_fail (gst_buffer_map (slot->buffer, &mi, GST_MAP_READ));
-      if (fwrite (mi.data, slot->size, 1, cache->file)) {
-        cache->m_dk_pos += slot->size;
-        fflush (cache->file);
-      }
-      gst_buffer_unmap (slot->buffer, &mi);
-    }
-    GST_CACHE_UNLOCK (cache);
-    if ((i % 8) == 0) {
-      /* Ensure other threads are scheduled */
-      g_thread_yield ();
-    }
-  }
-  GST_CACHE_LOCK (cache);
-  cache->l_dk_offset = cache->m_dk_offset;
-  cache->is_rb_migrated = TRUE;
-
-  GST_INFO ("ring buffer migration finished in %" GST_TIME_FORMAT,
-      GST_TIME_ARGS (GST_CLOCK_DIFF (cache->mtime, gst_util_get_timestamp ())));
-  dump_cache_state (cache, "post-migration");
-
-beach:
-  GST_CACHE_UNLOCK (cache);
-  gst_shifter_cache_unref (cache);
-}
-
-gboolean
-gst_shifter_cache_start_recording (GstShifterCache * cache)
-{
-  GError *error = NULL;
-  gboolean ret = TRUE;
-
-  g_return_val_if_fail (cache->file, FALSE);
-
-  GST_CACHE_LOCK (cache);
-  if (G_LIKELY (cache->thread != NULL)) {
-    goto beach;                 /* Thread already running. Nothing to do */
-  }
-  if (G_UNLIKELY (cache->stop_recording)) {
-    ret = FALSE;
-    goto beach;
-  }
-  cache->m_dk_offset = cache->l_rb_offset;
-  cache->l_dk_offset = cache->h_offset;
-  cache->w_dk_pos = cache->h_offset - cache->l_rb_offset;
-  cache->mtime = gst_util_get_timestamp ();
-  cache->is_recording = TRUE;
-  GST_INFO ("ring buffer migration started");
-  dump_cache_state (cache, "pre-migration");
-
-  cache->thread =
-      g_thread_create ((GThreadFunc) gst_shifter_cache_migration_thread,
-      gst_shifter_cache_ref (cache), TRUE, &error);
-
-  if (G_UNLIKELY (error))
-    goto no_thread;
-
-beach:
-  GST_CACHE_UNLOCK (cache);
-  return ret;
-
-  /* ERRORS */
-no_thread:
-  {
-    GST_CACHE_UNLOCK (cache);
-    GST_ERROR ("could not create migration thread: %s", error->message);
-    g_error_free (error);
-  }
-  return FALSE;
-}
-
-void
-gst_shifter_cache_stop_recording (GstShifterCache * cache)
-{
-  GST_CACHE_LOCK (cache);
-  cache->stop_recording = TRUE;
-  GST_CACHE_UNLOCK (cache);
-
-  /* Ensure that the ringbuffer is migrated to the file */
-  if (cache->thread) {
-    g_thread_join (cache->thread);
-  }
-  GST_CACHE_LOCK (cache);
-  cache->thread = NULL;
-  cache->is_recording = FALSE;
-  GST_CACHE_UNLOCK (cache);
-}
-
-/* Try to refill the ringbuffer with data from the disk */
-static inline void
-gst_shifter_cache_reload (GstShifterCache * cache, gboolean drain)
-{
-  guint i, n = 1;
-
-  if (!drain) {
-    /* we want to try keep the fullness on the ringbuffer to achieve it we
-     * refill at log2(emptiness) to fill it faster */
-    n = g_bit_storage (cache->nslots - g_atomic_int_get (&cache->fslots));
-  }
-
-  for (i = 0; i < n; i++) {
-    Slot *tail = &cache->slots[cache->tail];
-    gst_shifter_cache_recycle (cache, tail);
-    if (gst_shifter_cache_disk_read (cache, tail, cache->h_rb_offset, drain)) {
-      cache->tail = (cache->tail + 1) % cache->nslots;
-      cache->h_rb_offset = GST_BUFFER_OFFSET (tail->buffer) + tail->size;
-      g_atomic_int_inc (&cache->fslots);
-    } else {
-      break;
-    }
-  }
-}
-
 /**
  * gst_shifter_cache_pop:
  * @cache: a #GstShifterCache
@@ -776,13 +436,6 @@ gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain)
   pop = g_atomic_int_compare_and_exchange (&head->state, STATE_FULL, STATE_POP);
 
   if (pop) {
-    gboolean is_recording, is_rb_migrated;
-
-    GST_CACHE_LOCK (cache);
-    is_recording = cache->is_recording;
-    is_rb_migrated = cache->is_rb_migrated;
-    GST_CACHE_UNLOCK (cache);
-
     g_atomic_int_add (&cache->fslots, -1);
     buffer = gst_buffer_copy (head->buffer);
     GST_BUFFER_OFFSET_END (buffer) =
@@ -793,9 +446,6 @@ gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain)
     }
 
     cache->head = (cache->head + 1) % cache->nslots;
-    if (is_recording && is_rb_migrated) {
-      gst_shifter_cache_reload (cache, drain);
-    }
   }
 #if DEBUG_RINGBUFFER
   dump_cache_state (cache, "post-pop");
@@ -814,56 +464,44 @@ gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain)
  *
  */
 
-void
+gboolean
 gst_shifter_cache_push (GstShifterCache * cache, guint8 *data, gsize size)
 {
   Slot *tail;
   gsize avail;
-  gboolean is_recording;
-
-  GST_CACHE_LOCK (cache);
-  is_recording = cache->is_recording;
-  GST_CACHE_UNLOCK (cache);
 
 #if DEBUG_RINGBUFFER
   dump_cache_state (cache, "pre-push");
 #endif
 
-  if (is_recording) {
-    gst_shifter_cache_disk_write (cache, data, size);
-    /* handle underruns by refilling the ringbuffer */
-    if (gst_shifter_cache_is_empty (cache)) {
-      gst_shifter_cache_reload (cache, FALSE);
-    }
-  } else {
-    while (size) {
+  while (size) {
 #if DEBUG_RINGBUFFER
-      GST_DEBUG ("remaining size %d", size);
-      dump_cache_state (cache, "pre-push");
+    GST_DEBUG ("remaining size %d", size);
+    dump_cache_state (cache, "pre-push");
 #endif
-      tail = &cache->slots[cache->tail];
-      gst_shifter_cache_recycle (cache, tail);
-      if (slot_available (tail, &avail)) {
-        avail = MIN (avail, size);
-        if (slot_write (tail, data, avail, cache->h_rb_offset)) {
-          /* Move the tail when the slot is full */
-          cache->tail = (cache->tail + 1) % cache->nslots;
-          cache->h_rb_offset += CACHE_SLOT_SIZE;
-          g_atomic_int_inc (&cache->fslots);
-        }
-        data += avail;
-        size -= avail;
-        cache->h_offset += avail;
-      } else {
-        gst_shifter_cache_start_recording (cache);
-        gst_shifter_cache_disk_write (cache, data, size);
-        size = 0;
+    tail = &cache->slots[cache->tail];
+    gst_shifter_cache_recycle (cache, tail);
+    if (slot_available (tail, &avail)) {
+      avail = MIN (avail, size);
+      if (slot_write (tail, data, avail, cache->h_rb_offset)) {
+        /* Move the tail when the slot is full */
+        cache->tail = (cache->tail + 1) % cache->nslots;
+        cache->h_rb_offset += CACHE_SLOT_SIZE;
+        g_atomic_int_inc (&cache->fslots);
       }
+      data += avail;
+      size -= avail;
+      cache->h_offset += avail;
+    } else {
+      // TODO: This should be handled in a designed manner
+      return FALSE;
     }
   }
 #if DEBUG_RINGBUFFER
   dump_cache_state (cache, "post-push");
 #endif
+
+  return TRUE;
 }
 
 /**
@@ -878,20 +516,12 @@ gboolean
 gst_shifter_cache_has_offset (GstShifterCache * cache, guint64 offset)
 {
   g_return_val_if_fail (cache != NULL, FALSE);
-  gboolean is_disk_usable;
   gboolean ret;
 
   GST_CACHE_LOCK (cache);
   dump_cache_state (cache, "has_offset");
 
-  is_disk_usable = cache->is_recording && cache->is_rb_migrated;
-
-  /* clamp to a min/max valid offset */
-  if (is_disk_usable) {
-    ret = (offset >= cache->l_dk_offset && offset < cache->h_dk_offset);
-  } else {
-    ret = (offset >= cache->l_rb_offset && offset < cache->h_offset);
-  }
+  ret = (offset >= cache->l_rb_offset && offset < cache->h_offset);
   GST_CACHE_UNLOCK (cache);
   return ret;
 }
@@ -910,22 +540,15 @@ gst_shifter_cache_seek (GstShifterCache * cache, guint64 offset)
 {
   Slot *head;
   g_return_val_if_fail (cache != NULL, FALSE);
-  gboolean is_disk_usable;
 
   GST_DEBUG ("requested seek at offset: %" G_GUINT64_FORMAT, offset);
 
   GST_CACHE_LOCK (cache);
-  is_disk_usable = cache->is_recording && cache->is_rb_migrated;
   dump_cache_state (cache, "pre-seek");
 
   /* clamp to a min/max valid offset */
-  if (is_disk_usable) {
-    offset = MIN (offset, cache->h_dk_offset);
-    offset = MAX (offset, cache->l_dk_offset);
-  } else {
-    offset = MIN (offset, cache->h_rb_offset);
-    offset = MAX (offset, cache->l_rb_offset);
-  }
+  offset = MIN (offset, cache->h_rb_offset);
+  offset = MAX (offset, cache->l_rb_offset);
   GST_CACHE_UNLOCK (cache);
 
   GST_DEBUG ("seeking for offset: %" G_GUINT64_FORMAT, offset);
@@ -970,24 +593,6 @@ gst_shifter_cache_seek (GstShifterCache * cache, guint64 offset)
           offset < GST_BUFFER_OFFSET (head->buffer) + head->size));
     }
     cache->head = seeker;
-    goto beach;
-  }
-
-  if (is_disk_usable) {
-    /* requested position is in the disk */
-    GST_DEBUG ("seeking in disk");
-
-    /* flush the ring buffer */
-    gst_shifter_cache_flush (cache);
-
-    /* update the reading position in the disk */
-    GST_CACHE_LOCK (cache);
-    cache->r_dk_pos = offset - cache->l_dk_offset;
-    cache->h_rb_offset = cache->l_rb_offset = offset;
-    GST_CACHE_UNLOCK (cache);
-
-    /* reload data into the ringbuffer */
-    gst_shifter_cache_reload (cache, FALSE);
     goto beach;
   }
 
@@ -1037,70 +642,4 @@ gst_shifter_cache_fullness (GstShifterCache * cache)
     return (GST_BUFFER_OFFSET (tail->buffer) - GST_BUFFER_OFFSET (head->buffer)
         + head->size);
   }
-}
-
-/**
- * gst_shifter_cache_is_recording:
- * @cache: a #GstShifterCache
- *
- * Return TRUE if cache is using the disk.
- *
- */
-gboolean
-gst_shifter_cache_is_recording (GstShifterCache * cache)
-{
-  gboolean ret;
-  g_return_val_if_fail (cache != NULL, FALSE);
-
-  GST_CACHE_LOCK (cache);
-  ret = cache->is_recording;
-  GST_CACHE_UNLOCK (cache);
-  return ret;
-}
-
-/**
- * gst_shifter_cache_get_filename:
- * @cache: a #GstShifterCache
- *
- * Return a pointer with the filename created to extend the ringbuffer.
- *
- */
-gchar *
-gst_shifter_cache_get_filename (GstShifterCache * cache)
-{
-  g_return_val_if_fail (cache != NULL, NULL);
-
-  return cache->filename;
-}
-
-/**
- * gst_shifter_cache_get_autoremove:
- * @cache: a #GstShifterCache
- *
- * Return a gboolean that describes if cache file is going to be autoremvoced
- * on close.
- *
- */
-gboolean
-gst_shifter_cache_get_autoremove (GstShifterCache * cache)
-{
-  g_return_val_if_fail (cache != NULL, FALSE);
-
-  return cache->autoremove;
-}
-
-/**
- * gst_shifter_cache_set_autoremove:
- * @cache: a #GstShifterCache
- * @autoremove: a #gboolean
- *
- * Defines if cache file is going to be autoremvoced on close.
- *
- */
-void
-gst_shifter_cache_set_autoremove (GstShifterCache * cache, gboolean autoremove)
-{
-  g_return_if_fail (cache != NULL);
-
-  cache->autoremove = autoremove;
 }

@@ -40,22 +40,14 @@ GstShifterCache *gst_shifter_cache_new (gsize size, gchar * filename_template);
 GstShifterCache *gst_shifter_cache_ref (GstShifterCache * cache);
 void gst_shifter_cache_unref (GstShifterCache * cache);
 
-void gst_shifter_cache_push (GstShifterCache * cache, guint8 *data, gsize size);
+gboolean gst_shifter_cache_push (GstShifterCache * cache, guint8 *data, gsize size);
 GstBuffer *gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain);
 
 gboolean gst_shifter_cache_has_offset (GstShifterCache * cache, guint64 offset);
 gboolean gst_shifter_cache_seek (GstShifterCache * cache, guint64 offset);
 
-gboolean gst_shifter_cache_start_recording (GstShifterCache * cache);
-void gst_shifter_cache_stop_recording (GstShifterCache * cache);
-
 gboolean gst_shifter_cache_is_empty (GstShifterCache * cache);
 guint64 gst_shifter_cache_fullness (GstShifterCache * cache);
-gboolean gst_shifter_cache_is_recording (GstShifterCache * cache);
-gchar *gst_shifter_cache_get_filename (GstShifterCache * cache);
-gboolean gst_shifter_cache_get_autoremove (GstShifterCache * cache);
-void gst_shifter_cache_set_autoremove (GstShifterCache * cache,
-    gboolean autoremove);
 
 G_END_DECLS
 

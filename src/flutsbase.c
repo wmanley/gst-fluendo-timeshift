@@ -43,8 +43,7 @@ enum
 {
   PROP_0,
   PROP_CACHE_SIZE,
-  PROP_RECORDING_TEMPLATE,
-  PROP_RECORDING_REMOVE,
+  PROP_TEMP_TEMPLATE,
   PROP_LAST
 };
 
@@ -122,8 +121,7 @@ gst_flutsbase_start (GstFluTSBase * ts)
     ts->cache = NULL;
   }
 
-  ts->cache = gst_shifter_cache_new (ts->cache_size, ts->recording_template);
-  gst_shifter_cache_set_autoremove (ts->cache, ts->recording_remove);
+  ts->cache = gst_shifter_cache_new (ts->cache_size, ts->temp_template);
 
   /* If this is our own index destroy it as the old entries might be wrong */
   if (ts->own_index) {
@@ -143,34 +141,11 @@ gst_flutsbase_start (GstFluTSBase * ts)
   }
 
   gst_segment_init (&ts->segment, GST_FORMAT_BYTES);
-  ts->recording_started = FALSE;
   FLOW_MUTEX_UNLOCK (ts);
 }
 
 static void
-gst_flutsbase_stop (GstFluTSBase * ts)
-{
-  gboolean is_recording = FALSE;
-  FLOW_MUTEX_LOCK (ts);
-  if (ts->cache) {
-    gchar *filename = gst_shifter_cache_get_filename (ts->cache);
-    is_recording = gst_shifter_cache_is_recording (ts->cache);
-    gst_shifter_cache_stop_recording (ts->cache);
-
-    if (is_recording && filename) {
-      GstStructure *stru = gst_structure_new ("shifter-recording-stopped",
-          "filename", G_TYPE_STRING, filename, NULL);
-      gst_element_post_message (GST_ELEMENT_CAST (ts),
-          gst_message_new_element (GST_OBJECT (ts), stru));
-    }
-    gst_shifter_cache_unref (ts->cache);
-    ts->cache = NULL;
-  }
-  FLOW_MUTEX_UNLOCK (ts);
-}
-
-static void
-gst_flutsbase_set_recording_template (GstFluTSBase * ts, const gchar * template)
+gst_flutsbase_set_temp_template (GstFluTSBase * ts, const gchar * template)
 {
   GstState state;
 
@@ -182,8 +157,8 @@ gst_flutsbase_set_recording_template (GstFluTSBase * ts, const gchar * template)
   GST_OBJECT_UNLOCK (ts);
 
   /* set new location */
-  g_free (ts->recording_template);
-  ts->recording_template = g_strdup (template);
+  g_free (ts->temp_template);
+  ts->temp_template = g_strdup (template);
 
   return;
 
@@ -191,7 +166,7 @@ gst_flutsbase_set_recording_template (GstFluTSBase * ts, const gchar * template)
 wrong_state:
   {
     GST_WARNING_OBJECT (ts,
-        "setting recording-template property in wrong state");
+        "setting temp-template property in wrong state");
     GST_OBJECT_UNLOCK (ts);
   }
 }
@@ -380,19 +355,10 @@ gst_flutsbase_push (GstFluTSBase * ts, guint8 * data, gsize size)
     bclass->collect_time (ts, data, size);
   }
   /* add data to the cache */
-  gst_shifter_cache_push (ts->cache, data, size);
-  FLOW_SIGNAL_ADD (ts);
-
-  if (G_UNLIKELY (!ts->recording_started &&
-          gst_shifter_cache_is_recording (ts->cache))) {
-    gchar *filename = gst_shifter_cache_get_filename (ts->cache);
-
-    GstStructure *stru = gst_structure_new ("shifter-recording-started",
-        "filename", G_TYPE_STRING, filename, NULL);
-    gst_element_post_message (GST_ELEMENT_CAST (ts),
-        gst_message_new_element (GST_OBJECT (ts), stru));
-    ts->recording_started = TRUE;
+  if (!gst_shifter_cache_push (ts->cache, data, size)) {
+    goto out_eos;
   }
+  FLOW_SIGNAL_ADD (ts);
 
   FLOW_MUTEX_UNLOCK (ts);
 
@@ -525,27 +491,6 @@ beach:
   return ret;
 }
 
-static gboolean
-gst_flutsbase_handle_custom_upstream (GstFluTSBase * ts, GstEvent * event)
-{
-  gboolean ret = FALSE;
-  const GstStructure *stru;
-
-  stru = gst_event_get_structure (event);
-  if (stru && gst_structure_has_name (stru, "shifter-start-recording")) {
-    if (GST_STATE (ts) < GST_STATE_PAUSED) {
-      GST_DEBUG_OBJECT (ts, "Received event while not in PAUSED/PLAYING state");
-      goto beach;
-    }
-    FLOW_MUTEX_LOCK (ts);
-    ret = gst_shifter_cache_start_recording (ts->cache);
-    FLOW_MUTEX_UNLOCK (ts);
-  }
-
-beach:
-  return ret;
-}
-
 static inline gboolean
 gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
@@ -654,11 +599,6 @@ gst_flutsbase_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
     }
     case GST_EVENT_QOS:
     {
-      break;
-    }
-    case GST_EVENT_CUSTOM_UPSTREAM:
-    {
-      ret = gst_flutsbase_handle_custom_upstream (ts, event);
       break;
     }
     default:
@@ -874,10 +814,7 @@ gst_flutsbase_change_state (GstElement * element, GstStateChange transition)
 
   switch (transition) {
     case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
-      break;
     case GST_STATE_CHANGE_PAUSED_TO_READY:
-      gst_flutsbase_stop (ts);
-      break;
     case GST_STATE_CHANGE_READY_TO_NULL:
       break;
     default:
@@ -901,14 +838,8 @@ gst_flutsbase_set_property (GObject * object,
     case PROP_CACHE_SIZE:
       ts->cache_size = g_value_get_uint64 (value);
       break;
-    case PROP_RECORDING_TEMPLATE:
-      gst_flutsbase_set_recording_template (ts, g_value_get_string (value));
-      break;
-    case PROP_RECORDING_REMOVE:
-      ts->recording_remove = g_value_get_boolean (value);
-      if (ts->cache) {
-        gst_shifter_cache_set_autoremove (ts->cache, ts->recording_remove);
-      }
+    case PROP_TEMP_TEMPLATE:
+      gst_flutsbase_set_temp_template (ts, g_value_get_string (value));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -930,11 +861,8 @@ gst_flutsbase_get_property (GObject * object,
     case PROP_CACHE_SIZE:
       g_value_set_uint64 (value, ts->cache_size);
       break;
-    case PROP_RECORDING_TEMPLATE:
-      g_value_set_string (value, ts->recording_template);
-      break;
-    case PROP_RECORDING_REMOVE:
-      g_value_set_boolean (value, ts->recording_remove);
+    case PROP_TEMP_TEMPLATE:
+      g_value_set_string (value, ts->temp_template);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -959,7 +887,7 @@ gst_flutsbase_finalize (GObject * object)
   g_cond_free (ts->buffer_add);
 
   /* recording_file path cleanup  */
-  g_free (ts->recording_template);
+  g_free (ts->temp_template);
 
   if (ts->index) {
     gst_object_unref (ts->index);
@@ -988,17 +916,11 @@ gst_flutsbase_class_init (GstFluTSBaseClass * klass)
           DEFAULT_MIN_CACHE_SIZE, G_MAXUINT64, DEFAULT_CACHE_SIZE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gclass, PROP_RECORDING_TEMPLATE,
-      g_param_spec_string ("recording-template", "Recording File Template",
-          "File template to store recorded files in, should contain directory "
-          "and a prefix filename. (NULL == disabled)",
+  g_object_class_install_property (gclass, PROP_TEMP_TEMPLATE,
+      g_param_spec_string ("temp-template", "File Template",
+          "File template for temporary storage, should contain directory "
+          "and a prefix filename.",
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gclass, PROP_RECORDING_REMOVE,
-      g_param_spec_boolean ("recording-remove", "Remove the Recorded File",
-          "Remove the recorded file after use",
-          DEFAULT_RECORDING_REMOVE,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /* set several parent class virtual functions */
   gclass->finalize = gst_flutsbase_finalize;
@@ -1046,8 +968,7 @@ gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass)
   ts->buffer_add = g_cond_new ();
 
   /* tempfile related */
-  ts->recording_template = NULL;
-  ts->recording_remove = DEFAULT_RECORDING_REMOVE;
+  ts->temp_template = NULL;
 
   ts->cache_size = DEFAULT_CACHE_SIZE;
 

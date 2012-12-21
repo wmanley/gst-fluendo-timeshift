@@ -70,10 +70,7 @@ struct _GstFluTSBase
   GMutex *flow_lock;            /* lock for flow control */
   GCond *buffer_add;            /* signals buffers added to the cache */
 
-  /* recording location stuff */
-  gchar *recording_template;
-  gboolean recording_remove;
-  gboolean recording_started;
+  gchar *temp_template;
 
   /* Generated Index */
   GstIndex *index;
