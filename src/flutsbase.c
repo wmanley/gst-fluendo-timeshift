@@ -228,6 +228,9 @@ gst_flutsbase_pop (GstFluTSBase * ts)
     GstClockTime time = gst_flutsbase_bytes_to_stream_time(ts,
         GST_BUFFER_OFFSET (buffer));
     if (time != GST_CLOCK_TIME_NONE) {
+      if (G_UNLIKELY (ts->segment.format != GST_FORMAT_TIME)) {
+        gst_segment_init (&ts->segment, GST_FORMAT_TIME);
+      }
       ts->segment.start = ts->segment.time = time;
       GST_BUFFER_TIMESTAMP (buffer) = ts->segment.start;
     } else if (ts->segment.format == GST_FORMAT_BYTES) {

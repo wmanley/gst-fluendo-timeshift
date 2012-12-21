@@ -179,10 +179,6 @@ gst_flumpegshifter_collect_time (GstFluTSBase * base, guint8 * data, gsize size)
     goto beach;
   }
 
-  if (G_UNLIKELY (base->segment.format != GST_FORMAT_TIME)) {
-    gst_segment_init (&base->segment, GST_FORMAT_TIME);
-  }
-
   offset = ts->current_offset;
   while (remaining >= TS_MIN_PACKET_SIZE) {
     pcr = gst_flumpegshifter_get_pcr (ts, &data, &remaining, &offset);
