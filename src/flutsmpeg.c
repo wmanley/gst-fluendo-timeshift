@@ -230,7 +230,7 @@ beach:
 }
 
 static guint64
-gst_flumpegshifter_seek (GstFluTSBase * base, GstFormat format,
+gst_flumpegshifter_seek (GstFluTSBase * base,
     GstSeekType type, gint64 start)
 {
   GstFluMPEGShifter *ts = GST_FLUMPEGSHIFTER_CAST (base);
@@ -240,22 +240,7 @@ gst_flumpegshifter_seek (GstFluTSBase * base, GstFormat format,
   GstClockTime pos = 0;
 
   if (type == GST_SEEK_TYPE_NONE) {
-    goto beach;
-  }
-
-  if (format == GST_FORMAT_BYTES) {
-    GST_DEBUG_OBJECT (ts, "seeking at bytes %" G_GINT64_FORMAT " type %d",
-        start, type);
-
-    if (type == GST_SEEK_TYPE_SET) {
-      offset = start;
-      goto beach;
-    } else if (type == GST_SEEK_TYPE_END) {
-      offset = ts->current_offset + start;
-      goto beach;
-    }
-  } else if (format != GST_FORMAT_TIME) {
-    GST_WARNING_OBJECT (ts, "Only seeking in TIME and BYTES supported");
+    /* Base class checks: Should never happen */
     goto beach;
   }
 
@@ -289,9 +274,6 @@ gst_flumpegshifter_seek (GstFluTSBase * base, GstFormat format,
   }
 
 beach:
-  if (offset != -1 && !gst_shifter_cache_has_offset (base->cache, offset)) {
-    offset = -1;
-  }
   return offset;
 }
 
