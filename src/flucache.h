@@ -17,10 +17,10 @@
  * Boston, MA 02111-1307, USA.
  */
 
-#include "gst-compat.h"
-
 #ifndef __FLUCACHE_H__
 #define __FLUCACHE_H__
+
+#include <gst/gst.h>
 
 G_BEGIN_DECLS
 

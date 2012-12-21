@@ -20,11 +20,12 @@
  * Boston, MA 02111-1307, USA.
  */
 
+#include <string.h>
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
-#include "gst-compat.h"
 #include "flutsindex.h"
 
 static void gst_flutsindex_finalize (GObject * object);

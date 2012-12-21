@@ -241,11 +241,6 @@ gst_flumpegshifter_seek (GstFluTSBase * base, GstFormat format,
 
   if (type == GST_SEEK_TYPE_NONE) {
     goto beach;
-#if !GST_CHECK_VERSION (1,0,0)
-  } else if (type == GST_SEEK_TYPE_CUR) {
-    GST_WARNING_OBJECT (ts, "CUR type not imlemented");
-    goto beach;
-#endif
   }
 
   if (format == GST_FORMAT_BYTES) {

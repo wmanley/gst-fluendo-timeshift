@@ -24,6 +24,8 @@
 #ifndef __FLUTSINDEX_H__
 #define __FLUTSINDEX_H__
 
+#include <gst/gst.h>
+
 G_BEGIN_DECLS
 #define GST_TYPE_FLUTSINDEX                  (gst_flutsindex_get_type ())
 #define GST_FLUTSINDEX(obj)                  (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_FLUTSINDEX, GstFluTSIndex))

@@ -17,6 +17,8 @@
  * Boston, MA 02111-1307, USA.
  */
 
+#include <gst/gst.h>
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -64,14 +66,7 @@ plugin_init (GstPlugin * plugin)
   return TRUE;
 }
 
-#if GST_CHECK_VERSION (1,0,0)
 GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR,
     flutimeshift, "Fluendo Time Shift element",
     plugin_init, VERSION, "LGPL", PACKAGE_NAME,
     "http://www.fluendo.com, http://www.youview.com");
-#else
-GST_PLUGIN_DEFINE (GST_VERSION_MAJOR, GST_VERSION_MINOR,
-    "flutimeshift", "Fluendo Time Shift element",
-    plugin_init, VERSION, "LGPL", PACKAGE_NAME,
-    "http://www.fluendo.com");
-#endif
