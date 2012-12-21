@@ -86,6 +86,9 @@ enum
 static GstElementClass *parent_class = NULL;
 static void gst_flutsbase_class_init (GstFluTSBaseClass * klass);
 static void gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass);
+static GstClockTime gst_flutsbase_bytes_to_stream_time(GstFluTSBase * ts,
+    GstFormat format, GstSeekType type, gint64 start);
+
 
 GType
 gst_flutsbase_get_type (void)
@@ -223,11 +226,9 @@ gst_flutsbase_pop (GstFluTSBase * ts)
     GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
     GstEvent *newsegment;
 
-    if (bclass->update_segment) {
-      GstMapInfo map;
-      gst_buffer_map (buffer, &map, GST_MAP_READ);
-      bclass->update_segment (ts, map.data, map.size);
-      gst_buffer_unmap (buffer, &map);
+    GstClockTime time = gst_flutsbase_bytes_to_stream_time(ts, GST_BUFFER_OFFSET);
+    if (time != GST_TIME_NONE) {
+      ts->segment.start = ts->segment.time = time;
       GST_BUFFER_TIMESTAMP (buffer) = ts->segment.start;
     } else if (ts->segment.format == GST_FORMAT_BYTES) {
       ts->segment.start = ts->segment.time = GST_BUFFER_OFFSET (buffer);
@@ -442,6 +443,27 @@ gst_flutsbase_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   gst_buffer_unref (buffer);
  
   return res;
+}
+
+static GstClockTime
+gst_flutsbase_bytes_to_stream_time(GstFluTSBase * ts, GstFormat format,
+    GstSeekType type, gint64 start)
+{
+  /* Let's check if we have an index entry for that seek bytes */
+  entry = gst_index_get_assoc_entry (base->index, base->index_id,
+      GST_INDEX_LOOKUP_BEFORE, GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES, len);
+
+  if (entry) {
+    gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
+    gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &time);
+
+    GST_DEBUG_OBJECT (base, "found index entry at %" GST_TIME_FORMAT " pos %"
+        G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
+    return time;
+  }
+  else {
+    return GST_TIME_NONE;
+  }
 }
 
 static guint64
