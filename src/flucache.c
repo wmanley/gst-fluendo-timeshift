@@ -256,7 +256,7 @@ void
 dump_cache_state (GstShifterCache * cache, const gchar * title)
 {
   static const gchar *state_names[] =
-      { "EMPTY   ", "PART    ", "RECYCLE ", "FULL    ", "POP     " };
+      { "EMPTY   ", "PART    ", "FULL    ", "POP     ", "RECYCLE " };
   gint i;
   GST_DEBUG ("---> %s \t head: %d tail: %d nslots: %d fslots: %d",
       title, cache->head, cache->tail, cache->nslots,
