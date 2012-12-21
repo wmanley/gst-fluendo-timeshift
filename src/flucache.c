@@ -126,37 +126,25 @@ struct _SlotMeta
   Slot *slot;
 };
 
-static inline void
-_slot_meta_init (SlotMeta * meta)
-{
-  meta->cache = NULL;
-  meta->slot = NULL;
-}
-
-static inline void
-_slot_meta_free (SlotMeta * meta)
-{
-  if (meta->slot)
-    g_atomic_int_set (&meta->slot->state, STATE_RECYCLE);
-
-  if (meta->cache)
-    gst_shifter_cache_unref (meta->cache);
-}
-
 GType gst_slot_meta_api_get_type (void);
 #define SLOT_META_API_TYPE  (gst_slot_meta_api_get_type())
 
 static gboolean
 gst_slot_meta_init (SlotMeta * meta, gpointer params, GstBuffer * buffer)
 {
-  _slot_meta_init (meta);
+  meta->cache = NULL;
+  meta->slot = NULL;
   return TRUE;
 }
 
 static void
 gst_slot_meta_free (SlotMeta * meta, GstBuffer * buffer)
 {
-  _slot_meta_free (meta);
+  if (meta->slot)
+    g_atomic_int_set (&meta->slot->state, STATE_RECYCLE);
+
+  if (meta->cache)
+    gst_shifter_cache_unref (meta->cache);
 }
 
 GType
@@ -186,6 +174,23 @@ gst_slot_meta_get_info (void)
     g_once_init_leave (&info, _info);
   }
   return info;
+}
+
+static GstBuffer *
+gst_slot_buffer_new (GstShifterCache * cache, Slot * slot)
+{
+  SlotMeta *meta;
+
+  GstBuffer *buffer = gst_buffer_copy (slot->buffer);
+
+  meta = (SlotMeta *) gst_buffer_add_meta (buffer, SLOT_META_INFO, NULL);
+  meta->cache = gst_shifter_cache_ref (cache);
+  meta->slot = slot;
+
+  GST_BUFFER_OFFSET (buffer) = GST_BUFFER_OFFSET (slot->buffer);
+  GST_BUFFER_OFFSET_END (buffer) = GST_BUFFER_OFFSET (buffer) + slot->size;
+
+  return buffer;
 }
 
 /* GstShifterCache */
@@ -437,9 +442,7 @@ gst_shifter_cache_pop (GstShifterCache * cache, gboolean drain)
 
   if (pop) {
     g_atomic_int_add (&cache->fslots, -1);
-    buffer = gst_buffer_copy (head->buffer);
-    GST_BUFFER_OFFSET_END (buffer) =
-        GST_BUFFER_OFFSET (head->buffer) + head->size;
+    buffer = gst_slot_buffer_new (cache, head);
     if (cache->need_discont) {
       GST_BUFFER_FLAG_SET (buffer, GST_BUFFER_FLAG_DISCONT);
       cache->need_discont = FALSE;
