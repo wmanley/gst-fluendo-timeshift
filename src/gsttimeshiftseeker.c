@@ -104,7 +104,6 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
   GST_DEBUG_CATEGORY_INIT (gst_time_shift_seeker_debug_category,
       "gst_time_shift_seeker", 0, "FIXME Description");
 
-
   gobject_class->set_property = gst_time_shift_seeker_set_property;
   gobject_class->get_property = gst_time_shift_seeker_get_property;
   gobject_class->dispose = gst_time_shift_seeker_dispose;
@@ -113,7 +112,6 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
   base_transform_class->stop = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_stop);
   base_transform_class->sink_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_sink_event);
   base_transform_class->src_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_src_event);
-
 }
 
 static void
