@@ -895,9 +895,11 @@ gst_shifter_cache_has_offset (GstShifterCache * cache, guint64 offset)
 guint64
 gst_shifter_cache_get_total_bytes_received(GstShifterCache * cache)
 {
+  guint64 offset;
   GST_CACHE_LOCK (cache);
-  return cache->h_offset;
+  offset = cache->h_offset;
   GST_CACHE_UNLOCK (cache);
+  return offset;
 }
 
 /**
