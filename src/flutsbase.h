@@ -86,7 +86,6 @@ struct _GstFluTSBaseClass
 
   void (*collect_time) (GstFluTSBase * base, guint8 * data, gsize size);
   guint64 (*seek) (GstFluTSBase * base, GstSeekType type, gint64 start);
-  gboolean (*query) (GstFluTSBase * base, GstQuery * query);
 };
 
 GType gst_flutsbase_get_type (void);

@@ -1,5 +1,6 @@
 /* GStreamer
  * Copyright (C) 2013 Youview TV Ltd. <william.manley@youview.com>
+ * Copyright (C) 2011 Fluendo S.A. <support@fluendo.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -54,6 +55,9 @@ static gboolean
 gst_time_shift_seeker_src_event (GstBaseTransform * trans, GstEvent * event);
 static void gst_time_shift_seeker_replace_index(GstTimeShiftSeeker * seeker,
     GstIndex * new_index);
+static gboolean
+gst_time_shift_seeker_query (GstBaseTransform *trans, GstPadDirection direction,
+                             GstQuery *query);
 
 enum
 {
@@ -98,6 +102,7 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
   base_transform_class->stop = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_stop);
   base_transform_class->sink_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_sink_event);
   base_transform_class->src_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_src_event);
+  base_transform_class->query = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_query);
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_time_shift_seeker_sink_template));
@@ -118,7 +123,7 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
 }
 
 static void
-gst_time_shift_seeker_init (GstTimeShiftSeeker * timeshiftseeker)
+gst_time_shift_seeker_init (GstTimeShiftSeeker * seeker)
 {
 }
 
@@ -129,13 +134,10 @@ gst_time_shift_seeker_replace_index(GstTimeShiftSeeker * seeker,
   if (seeker->index) {
     gst_object_unref (seeker->index);
     seeker->index = NULL;
-    seeker->index_id = 0;
   }
   if (new_index) {
     gst_object_ref (new_index);
     seeker->index = new_index;
-    gst_index_get_writer_id (seeker->index, GST_OBJECT (seeker),
-      &seeker->index_id);
   }
 }
 
@@ -210,12 +212,214 @@ gst_time_shift_seeker_stop (GstBaseTransform * trans)
 static gboolean
 gst_time_shift_seeker_sink_event (GstBaseTransform * trans, GstEvent * event)
 {
+  GstTimeShiftSeeker *seeker = GST_TIME_SHIFT_SEEKER (trans);
+
+  switch (GST_EVENT_TYPE(event)) {
+    case GST_EVENT_SEGMENT:
+      if (!seeker->index) {
+        GST_ELEMENT_WARNING (trans, CORE, SEEK, NULL, ("Seeker has no index set"));
+      }
+      break;
+    default:
+      break;
+  };
   return GST_BASE_TRANSFORM_CLASS (parent_class)->sink_event (trans, event);
+}
+
+static guint64
+gst_time_shift_seeker_get_duration_bytes (GstTimeShiftSeeker * seeker)
+{
+  GstBaseTransform * base = GST_BASE_TRANSFORM (seeker);
+  GstQuery * query = gst_query_new_duration (GST_FORMAT_BYTES);
+  gboolean success = gst_pad_peer_query(base->sinkpad, query);
+  if (success) {
+    gint64 duration = -1;
+    gst_query_parse_duration(query, NULL, &duration);
+    return duration;
+  }
+  else {
+    return 0;
+  }
+}
+
+static GstClockTime
+gst_time_shift_seeker_get_last_time (GstTimeShiftSeeker * base)
+{
+  if (!base->index) {
+    GST_DEBUG_OBJECT (base, "no index");
+    return GST_CLOCK_TIME_NONE;
+  }
+  else {
+    gint64 time;
+    gint64 offset;
+    GstIndexEntry *entry = NULL;
+    guint64 len = gst_time_shift_seeker_get_duration_bytes(base);
+
+    entry = gst_index_get_assoc_entry (base->index, GST_INDEX_LOOKUP_BEFORE,
+        GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES, len - 1000000);
+
+    if (entry) {
+      gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
+      gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &time);
+
+      GST_DEBUG_OBJECT (base, "found index entry at %" GST_TIME_FORMAT " pos %"
+          G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
+      return time;
+    }
+    else {
+      GST_DEBUG_OBJECT (base, "no entry for position %lli in %p", len, base->index);
+      return GST_CLOCK_TIME_NONE;
+    }
+  }
+}
+
+static guint64
+gst_time_shift_seeker_seek (GstTimeShiftSeeker * base,
+    GstSeekType type, gint64 start)
+{
+  GstIndexEntry *entry = NULL;
+  gint64 offset = -1;
+  gint64 time;
+  GstClockTime pos = 0;
+
+  if (type == GST_SEEK_TYPE_NONE) {
+    /* Base class checks: Should never happen */
+    goto beach;
+  }
+
+  GST_DEBUG_OBJECT (base, "seeking at time %" GST_TIME_FORMAT " type %d",
+      GST_TIME_ARGS (start), type);
+
+  if (!base->index) {
+    GST_DEBUG_OBJECT (base, "no index");
+    goto beach;
+  }
+
+  if (type == GST_SEEK_TYPE_SET) {
+    pos = start;
+  } else if (type == GST_SEEK_TYPE_END) {
+    pos = gst_time_shift_seeker_get_last_time(base) + start;
+  }
+
+  GST_DEBUG_OBJECT (base, "seek in index for %" GST_TIME_FORMAT,
+      GST_TIME_ARGS (pos));
+
+  /* Let's check if we have an index entry for that seek time */
+  entry = gst_index_get_assoc_entry (base->index, GST_INDEX_LOOKUP_BEFORE,
+      GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_TIME, pos);
+
+  if (entry) {
+    gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
+    gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &time);
+
+    GST_DEBUG_OBJECT (base, "found index entry at %" GST_TIME_FORMAT " pos %"
+        G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
+  }
+
+beach:
+  return offset;
+}
+
+static void
+gst_time_shift_seeker_transform_offset(GstTimeShiftSeeker * ts, GstSeekType * type,
+      gint64 * offset)
+{
+  if (*type == GST_SEEK_TYPE_NONE) {
+    /* pass: no transformation required */
+  }
+  else {
+    *offset = gst_time_shift_seeker_seek (ts, *type, *offset);
+    *type = GST_SEEK_TYPE_SET;
+  }
+}
+
+/* Converts any seek events with format TIME to one with format BYTES */
+static void
+gst_time_shift_seeker_transform_seek_event (GstTimeShiftSeeker * seeker, GstEvent ** event)
+{
+  GstEvent * new_event = NULL;
+  GstFormat format;
+  GstSeekFlags flags;
+  GstSeekType start_type, stop_type;
+  gint64 start, stop;
+  gdouble rate;
+
+  gst_event_parse_seek (*event, &rate, &format, &flags,
+      &start_type, &start, &stop_type, &stop);
+
+  if (format != GST_FORMAT_TIME) {
+    goto beach;
+  }
+
+  if (!seeker->index) {
+    GST_ELEMENT_WARNING (seeker, CORE, SEEK, NULL, ("Seeker has no index set"));
+    goto beach;
+  }
+
+  if (rate < 0.0) {
+    GST_WARNING_OBJECT (seeker, "we only support forward playback");
+    goto beach;
+  }
+
+  gst_time_shift_seeker_transform_offset(seeker, &start_type, &start);
+  gst_time_shift_seeker_transform_offset(seeker, &stop_type, &stop);
+  new_event = gst_event_new_seek(rate, GST_FORMAT_BYTES, flags, start_type,
+      start, stop_type, stop);
+  gst_event_set_seqnum(new_event, gst_event_get_seqnum(*event));
+  gst_event_replace (event, new_event);
+
+beach:
+  return;
 }
 
 static gboolean
 gst_time_shift_seeker_src_event (GstBaseTransform * trans, GstEvent * event)
 {
+  GstTimeShiftSeeker *seeker = GST_TIME_SHIFT_SEEKER (trans);
+
+  if (GST_EVENT_TYPE(event) == GST_EVENT_SEEK) {
+    gst_time_shift_seeker_transform_seek_event (seeker, &event);
+  }
   return GST_BASE_TRANSFORM_CLASS (parent_class)->src_event (trans, event);
+}
+
+static gboolean
+gst_time_shift_seeker_query (GstBaseTransform *base, GstPadDirection direction,
+                             GstQuery *query)
+{
+  GstTimeShiftSeeker * ts = GST_TIME_SHIFT_SEEKER (base);
+
+  switch (GST_QUERY_TYPE (query)) {
+    case GST_QUERY_DURATION:
+    {
+      GstFormat format;
+
+      gst_query_parse_duration(query, &format, NULL);
+      if (format == GST_FORMAT_TIME && direction == GST_PAD_SRC) {
+        GST_DEBUG_OBJECT (base, "Responding to duration query with time  %" GST_TIME_FORMAT,
+          GST_TIME_ARGS (gst_time_shift_seeker_get_last_time(ts)));
+
+        gst_query_set_duration(query, format,
+              gst_time_shift_seeker_get_last_time(ts));
+        return TRUE;
+      }
+      break;
+    }
+    case GST_QUERY_SEEKING:
+    {
+      GstFormat fmt;
+
+      gst_query_parse_seeking (query, &fmt, NULL, NULL, NULL);
+      if (fmt == GST_FORMAT_TIME) {
+        gst_query_set_seeking (query, fmt, TRUE, 0, -1);
+        return TRUE;
+      }
+      break;
+    }
+    default:
+      break;
+  }
+  return GST_BASE_TRANSFORM_CLASS (parent_class)->query (base, direction,
+                                                         query);
 }
 

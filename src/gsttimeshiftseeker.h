@@ -40,7 +40,6 @@ struct _GstTimeShiftSeeker
 
   /* Generated Index */
   GstIndex *index;
-  gint index_id;
 };
 
 struct _GstTimeShiftSeekerClass

@@ -480,122 +480,6 @@ gst_flutsbase_bytes_to_stream_time(GstFluTSBase * ts, guint64 buffer_offset)
   return ret;
 }
 
-static guint64
-gst_flutsbase_get_bytes_offset(GstFluTSBase * ts, GstFormat format,
-    GstSeekType type, gint64 start)
-{
-  guint64 offset;
-  GstFluTSBaseClass *bclass;
-
-  bclass = GST_FLUTSBASE_GET_CLASS (ts);
-
-  if (type == GST_SEEK_TYPE_NONE) {
-    offset = -1;
-  } else {
-    switch (format) {
-      case GST_FORMAT_BYTES: {
-        GST_DEBUG_OBJECT (ts, "seeking at bytes %" G_GINT64_FORMAT " type %d",
-            start, type);
-
-        if (type == GST_SEEK_TYPE_SET) {
-          offset = start;
-        } else if (type == GST_SEEK_TYPE_END) {
-          offset = gst_shifter_cache_get_total_bytes_received(ts->cache) + start;
-        } else {
-          offset = -1;
-        }
-        break;
-      }
-      case GST_FORMAT_TIME: {
-        if (bclass->seek) {
-          FLOW_MUTEX_LOCK (ts);
-          offset = bclass->seek (ts, type, start);
-          FLOW_MUTEX_UNLOCK (ts);
-        } else {
-          GST_WARNING_OBJECT (ts, "seeking by TIME is not implemented");
-          offset = -1;
-        }
-        break;
-      }
-      default: {
-        GST_WARNING_OBJECT (ts, "Only seeking in TIME and BYTES supported");
-        offset = -1;
-      }
-    };
-  }
-  return offset;
-}
-
-static gboolean
-gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
-{
-  GstFormat format;
-  GstSeekFlags flags;
-  GstSeekType start_type, stop_type;
-  gint64 start, stop;
-  gdouble rate;
-  guint64 offset = 0;
-  gboolean ret = FALSE;
-
-  gst_event_parse_seek (event, &rate, &format, &flags,
-      &start_type, &start, &stop_type, &stop);
-
-  if (!(flags & GST_SEEK_FLAG_FLUSH)) {
-    GST_WARNING_OBJECT (ts, "we only support flushing seeks");
-    goto beach;
-  }
-
-  if (rate < 0.0) {
-    GST_WARNING_OBJECT (ts, "we only support forward playback");
-    goto beach;
-  }
-
-  offset = gst_flutsbase_get_bytes_offset(ts, format, start_type, start);
-  if (G_UNLIKELY (offset == (guint64) -1 || !gst_shifter_cache_has_offset (ts->cache, offset))) {
-    GST_WARNING_OBJECT (ts, "seek failed");
-    goto beach;
-  }
-
-  /* remember the rate */
-  ts->segment.rate = rate;
-
-  GST_DEBUG_OBJECT (ts, "seeking at offset %" G_GUINT64_FORMAT, offset);
-
-  /* now unblock the loop function */
-  FLOW_MUTEX_LOCK (ts);
-  /* Flush start downstream to make sure loop is idle */
-  gst_pad_push_event (ts->srcpad, gst_event_new_flush_start ());
-  ts->srcresult = GST_FLOW_FLUSHING;
-  /* unblock the loop function */
-  FLOW_SIGNAL_ADD (ts);
-  FLOW_MUTEX_UNLOCK (ts);
-
-  /* make sure it pauses, this should happen since we sent
-   * flush_start downstream. */
-  gst_pad_pause_task (ts->srcpad);
-  GST_DEBUG_OBJECT (ts, "loop stopped");
-  /* Flush stop downstream to ensure that all pushed cache slots come back
-   * to our control */
-  gst_pad_push_event (ts->srcpad, gst_event_new_flush_stop (TRUE));
-
-  /* Reconfigure the cache to handle the new offset */
-  FLOW_MUTEX_LOCK (ts);
-  gst_shifter_cache_seek (ts->cache, offset);
-
-  /* Restart the pushing loop */
-  ts->srcresult = GST_FLOW_OK;
-  ts->is_eos = FALSE;
-  ts->unexpected = FALSE;
-  ts->need_newsegment = TRUE;
-  gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
-      ts->srcpad, NULL);
-  FLOW_MUTEX_UNLOCK (ts);
-  GST_DEBUG_OBJECT (ts, "loop started");
-  ret = TRUE;
-beach:
-  return ret;
-}
-
 static gboolean
 gst_flutsbase_handle_custom_upstream (GstFluTSBase * ts, GstEvent * event)
 {
@@ -704,6 +588,95 @@ gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   return ret;
 }
 
+static guint64
+gst_flutsbase_get_bytes_offset(GstFluTSBase * ts, GstFormat format,
+    GstSeekType type, gint64 start)
+{
+  guint64 offset;
+
+  if (format != GST_FORMAT_BYTES) {
+    GST_WARNING_OBJECT (ts, "can only seek in bytes");
+    offset = -1;
+  } else {
+    GST_DEBUG_OBJECT (ts, "seeking at bytes %" G_GINT64_FORMAT " type %d",
+        start, type);
+
+    if (type == GST_SEEK_TYPE_SET) {
+      offset = start;
+    } else if (type == GST_SEEK_TYPE_END) {
+      offset = gst_shifter_cache_get_total_bytes_received(ts->cache) + start;
+    } else {
+      offset = -1;
+    }
+  }
+  return offset;
+}
+
+static gboolean
+gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
+{
+  GstFormat format;
+  GstSeekFlags flags;
+  GstSeekType start_type, stop_type;
+  gint64 start, stop;
+  gdouble rate;
+  guint64 offset = 0;
+  gboolean ret = FALSE;
+
+  gst_event_parse_seek (event, &rate, &format, &flags,
+      &start_type, &start, &stop_type, &stop);
+
+  if (!(flags & GST_SEEK_FLAG_FLUSH)) {
+    GST_WARNING_OBJECT (ts, "we only support flushing seeks");
+    goto beach;
+  }
+
+  offset = gst_flutsbase_get_bytes_offset(ts, format, start_type, start);
+  if (G_UNLIKELY (offset == (guint64) -1 || !gst_shifter_cache_has_offset (ts->cache, offset))) {
+    GST_WARNING_OBJECT (ts, "seek failed");
+    goto beach;
+  }
+
+  /* remember the rate */
+  ts->segment.rate = rate;
+
+  GST_DEBUG_OBJECT (ts, "seeking at offset %" G_GUINT64_FORMAT, offset);
+
+  /* now unblock the loop function */
+  FLOW_MUTEX_LOCK (ts);
+  /* Flush start downstream to make sure loop is idle */
+  gst_pad_push_event (ts->srcpad, gst_event_new_flush_start ());
+  ts->srcresult = GST_FLOW_FLUSHING;
+  /* unblock the loop function */
+  FLOW_SIGNAL_ADD (ts);
+  FLOW_MUTEX_UNLOCK (ts);
+
+  /* make sure it pauses, this should happen since we sent
+   * flush_start downstream. */
+  gst_pad_pause_task (ts->srcpad);
+  GST_DEBUG_OBJECT (ts, "loop stopped");
+  /* Flush stop downstream to ensure that all pushed cache slots come back
+   * to our control */
+  gst_pad_push_event (ts->srcpad, gst_event_new_flush_stop (TRUE));
+
+  /* Reconfigure the cache to handle the new offset */
+  FLOW_MUTEX_LOCK (ts);
+  gst_shifter_cache_seek (ts->cache, offset);
+
+  /* Restart the pushing loop */
+  ts->srcresult = GST_FLOW_OK;
+  ts->is_eos = FALSE;
+  ts->unexpected = FALSE;
+  ts->need_newsegment = TRUE;
+  gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
+      ts->srcpad, NULL);
+  FLOW_MUTEX_UNLOCK (ts);
+  GST_DEBUG_OBJECT (ts, "loop started");
+  ret = TRUE;
+beach:
+  return ret;
+}
+
 static inline gboolean
 gst_flutsbase_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
@@ -776,24 +749,32 @@ gst_flutsbase_query (GstElement * element, GstQuery * query)
     }
     case GST_QUERY_DURATION:
     {
-      GST_LOG_OBJECT (ts, "doing peer query");
+      GstFormat format;
 
-      GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
+      gst_query_parse_duration (query, &format, NULL);
 
-      if (bclass->query) {
-        ret = bclass->query (ts, query);
-      } else {
+      if (format == GST_FORMAT_BYTES) {
+        GST_LOG_OBJECT (ts, "replying duration query with %" G_GUINT64_FORMAT,
+            gst_shifter_cache_get_total_bytes_received(ts->cache));
+        gst_query_set_duration (query, GST_FORMAT_BYTES, 
+            gst_shifter_cache_get_total_bytes_received(ts->cache));
+        ret = TRUE;
+      }
+      else {
         ret = FALSE;
       }
       break;
     }
     case GST_QUERY_SEEKING:
     {
-      GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
+      GstFormat fmt;
 
-      if (bclass->query) {
-        ret = bclass->query (ts, query);
-      } else {
+      gst_query_parse_seeking (query, &fmt, NULL, NULL, NULL);
+      if (fmt == GST_FORMAT_BYTES) {
+        gst_query_set_seeking (query, fmt, TRUE, 0, -1);
+        ret = TRUE;
+      }
+      else {
         ret = FALSE;
       }
       break;
