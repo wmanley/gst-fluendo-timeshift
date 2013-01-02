@@ -52,10 +52,13 @@ static gboolean
 gst_time_shift_seeker_sink_event (GstBaseTransform * trans, GstEvent * event);
 static gboolean
 gst_time_shift_seeker_src_event (GstBaseTransform * trans, GstEvent * event);
+static void gst_time_shift_seeker_replace_index(GstTimeShiftSeeker * seeker,
+    GstIndex * new_index);
 
 enum
 {
-  PROP_0
+  PROP_0,
+  PROP_INDEX
 };
 
 /* pad templates */
@@ -87,18 +90,6 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
   GstBaseTransformClass *base_transform_class = GST_BASE_TRANSFORM_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
 
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&gst_time_shift_seeker_sink_template));
-  gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&gst_time_shift_seeker_src_template));
-
-  gst_element_class_set_static_metadata (element_class, "Time-shift seeker",
-      "Generic", "Transforms time to bytes as required by seek/segment events",
-      "William Manley <william.manley@youview.com>");
-
-  GST_DEBUG_CATEGORY_INIT (gst_time_shift_seeker_debug_category,
-      "gst_time_shift_seeker", 0, "Time-shift seeker");
-
   gobject_class->set_property = gst_time_shift_seeker_set_property;
   gobject_class->get_property = gst_time_shift_seeker_get_property;
   gobject_class->dispose = gst_time_shift_seeker_dispose;
@@ -107,6 +98,23 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
   base_transform_class->stop = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_stop);
   base_transform_class->sink_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_sink_event);
   base_transform_class->src_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_src_event);
+
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&gst_time_shift_seeker_sink_template));
+  gst_element_class_add_pad_template (element_class,
+      gst_static_pad_template_get (&gst_time_shift_seeker_src_template));
+
+  g_object_class_install_property (gobject_class, PROP_INDEX,
+      g_param_spec_object ("index", "Index",
+          "The index from which to read indexing information",
+          GST_TYPE_INDEX, (G_PARAM_READABLE | G_PARAM_WRITABLE)));
+
+  gst_element_class_set_static_metadata (element_class, "Time-shift seeker",
+      "Generic", "Transforms time to bytes as required by seek/segment events",
+      "William Manley <william.manley@youview.com>");
+
+  GST_DEBUG_CATEGORY_INIT (gst_time_shift_seeker_debug_category,
+      "gst_time_shift_seeker", 0, "Time-shift seeker");
 }
 
 static void
@@ -114,13 +122,34 @@ gst_time_shift_seeker_init (GstTimeShiftSeeker * timeshiftseeker)
 {
 }
 
+static void
+gst_time_shift_seeker_replace_index(GstTimeShiftSeeker * seeker,
+    GstIndex * new_index)
+{
+  if (seeker->index) {
+    gst_object_unref (seeker->index);
+    seeker->index = NULL;
+    seeker->index_id = 0;
+  }
+  if (new_index) {
+    gst_object_ref (new_index);
+    seeker->index = new_index;
+    gst_index_get_writer_id (seeker->index, GST_OBJECT (seeker),
+      &seeker->index_id);
+  }
+}
+
+
 void
 gst_time_shift_seeker_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
 {
-  /* GstTimeShiftSeeker *timeshiftseeker = GST_TIME_SHIFT_SEEKER (object); */
+  GstTimeShiftSeeker *seeker = GST_TIME_SHIFT_SEEKER (object);
 
   switch (property_id) {
+    case PROP_INDEX:
+      gst_time_shift_seeker_replace_index(seeker, g_value_dup_object(value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -131,9 +160,12 @@ void
 gst_time_shift_seeker_get_property (GObject * object, guint property_id,
     GValue * value, GParamSpec * pspec)
 {
-  /* GstTimeShiftSeeker *timeshiftseeker = GST_TIME_SHIFT_SEEKER (object); */
+  GstTimeShiftSeeker *seeker = GST_TIME_SHIFT_SEEKER (object);
 
   switch (property_id) {
+    case PROP_INDEX:
+      g_value_set_object(value, seeker->index);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -143,9 +175,10 @@ gst_time_shift_seeker_get_property (GObject * object, guint property_id,
 void
 gst_time_shift_seeker_dispose (GObject * object)
 {
-  /* GstTimeShiftSeeker *timeshiftseeker = GST_TIME_SHIFT_SEEKER (object); */
+  GstTimeShiftSeeker *seeker = GST_TIME_SHIFT_SEEKER (object);
 
   /* clean up as possible.  may be called multiple times */
+  gst_time_shift_seeker_replace_index(seeker, NULL);
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
