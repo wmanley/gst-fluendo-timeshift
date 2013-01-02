@@ -36,9 +36,6 @@ typedef struct _GstTimeShiftSeekerClass GstTimeShiftSeekerClass;
 struct _GstTimeShiftSeeker
 {
   GstBaseTransform base_timeshiftseeker;
-
-  GstPad *sinkpad;
-  GstPad *srcpad;
 };
 
 struct _GstTimeShiftSeekerClass

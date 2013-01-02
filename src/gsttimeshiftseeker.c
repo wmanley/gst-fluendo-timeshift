@@ -41,7 +41,6 @@
 
 GST_DEBUG_CATEGORY_STATIC (gst_time_shift_seeker_debug_category);
 #define GST_CAT_DEFAULT gst_time_shift_seeker_debug_category
-#define parent_class GST_TYPE_BASE_TRANSFORM
 
 /* prototypes */
 
@@ -110,6 +109,7 @@ GST_STATIC_PAD_TEMPLATE ("src",
 /* class initialization */
 
 G_DEFINE_TYPE (GstTimeShiftSeeker, gst_time_shift_seeker, GST_TYPE_BASE_TRANSFORM);
+#define parent_class gst_time_shift_seeker_parent_class
 
 static void
 gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
@@ -153,14 +153,6 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
 static void
 gst_time_shift_seeker_init (GstTimeShiftSeeker * timeshiftseeker)
 {
-
-  timeshiftseeker->sinkpad = gst_pad_new_from_static_template (&gst_time_shift_seeker_sink_template
-      ,     
-            "sink");
-
-  timeshiftseeker->srcpad = gst_pad_new_from_static_template (&gst_time_shift_seeker_src_template
-      ,     
-            "src");
 }
 
 void
