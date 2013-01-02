@@ -155,20 +155,27 @@ mirror_pad (GstElement * element, const gchar * static_pad_name, GstBin * bin)
 }
 
 static void
+gst_element_clear(GstElement ** elem)
+{
+  g_return_if_fail (!elem);
+  if (*elem)
+  {
+    g_object_unref(G_OBJECT(*elem));
+    *elem = NULL;
+  }
+}
+
+static void
 gst_flumpegshifter_bin_init (GstFluMPEGShifterBin * ts_bin)
 {
   GstBin *bin = GST_BIN (ts_bin);
 
   ts_bin->parser = gst_element_factory_make ("tsparse", "parser");
-  g_return_if_fail (ts_bin->parser);
-
   ts_bin->timeshifter =
       gst_element_factory_make ("flumpegshifter", "timeshifter");
-  g_return_if_fail (ts_bin->timeshifter);
-
-  ts_bin->seeker =
-      gst_element_factory_make ("timeshiftseeker", "seeker");
-  g_return_if_fail (ts_bin->seeker);
+  ts_bin->seeker = gst_element_factory_make ("timeshiftseeker", "seeker");
+  if (!ts_bin->parser || !ts_bin->timeshifter || !ts_bin->seeker)
+    goto error;
 
   gst_bin_add_many (bin, ts_bin->parser, ts_bin->timeshifter, ts_bin->seeker,
           NULL);
@@ -177,6 +184,12 @@ gst_flumpegshifter_bin_init (GstFluMPEGShifterBin * ts_bin)
 
   mirror_pad (ts_bin->parser, "sink", bin);
   mirror_pad (ts_bin->seeker, "src", bin);
+
+  return;
+error:
+  gst_element_clear (&ts_bin->parser);
+  gst_element_clear (&ts_bin->timeshifter);
+  gst_element_clear (&ts_bin->seeker);
 }
 
 static void
