@@ -52,37 +52,12 @@ static void gst_time_shift_seeker_get_property (GObject * object,
 static void gst_time_shift_seeker_dispose (GObject * object);
 static void gst_time_shift_seeker_finalize (GObject * object);
 
-static GstCaps *gst_time_shift_seeker_transform_caps (GstBaseTransform * trans,
-    GstPadDirection direction, GstCaps * caps, GstCaps * filter);
-static GstCaps *
-gst_time_shift_seeker_fixate_caps (GstBaseTransform * trans,
-    GstPadDirection direction, GstCaps * caps, GstCaps * othercaps);
-static gboolean
-gst_time_shift_seeker_transform_size (GstBaseTransform * trans,
-    GstPadDirection direction,
-    GstCaps * caps, guint size, GstCaps * othercaps, guint * othersize);
-static gboolean
-gst_time_shift_seeker_get_unit_size (GstBaseTransform * trans, GstCaps * caps,
-    guint * size);
-static gboolean
-gst_time_shift_seeker_set_caps (GstBaseTransform * trans, GstCaps * incaps,
-    GstCaps * outcaps);
 static gboolean gst_time_shift_seeker_start (GstBaseTransform * trans);
 static gboolean gst_time_shift_seeker_stop (GstBaseTransform * trans);
 static gboolean
 gst_time_shift_seeker_sink_event (GstBaseTransform * trans, GstEvent * event);
-static GstFlowReturn
-gst_time_shift_seeker_transform (GstBaseTransform * trans, GstBuffer * inbuf,
-    GstBuffer * outbuf);
-static GstFlowReturn
-gst_time_shift_seeker_transform_ip (GstBaseTransform * trans, GstBuffer * buf);
-static GstFlowReturn
-gst_time_shift_seeker_prepare_output_buffer (GstBaseTransform * trans,
-    GstBuffer * input, GstBuffer ** buf);
 static gboolean
 gst_time_shift_seeker_src_event (GstBaseTransform * trans, GstEvent * event);
-static void
-gst_time_shift_seeker_before_transform (GstBaseTransform * trans, GstBuffer * buffer);
 
 enum
 {
@@ -134,19 +109,10 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
   gobject_class->get_property = gst_time_shift_seeker_get_property;
   gobject_class->dispose = gst_time_shift_seeker_dispose;
   gobject_class->finalize = gst_time_shift_seeker_finalize;
-  base_transform_class->transform_caps = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_transform_caps);
-  base_transform_class->fixate_caps = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_fixate_caps);
-  base_transform_class->transform_size = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_transform_size);
-  base_transform_class->get_unit_size = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_get_unit_size);
-  base_transform_class->set_caps = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_set_caps);
   base_transform_class->start = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_start);
   base_transform_class->stop = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_stop);
   base_transform_class->sink_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_sink_event);
-  base_transform_class->transform = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_transform);
-  base_transform_class->transform_ip = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_transform_ip);
-  base_transform_class->prepare_output_buffer = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_prepare_output_buffer);
   base_transform_class->src_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_src_event);
-  base_transform_class->before_transform = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_before_transform);
 
 }
 
@@ -201,102 +167,29 @@ gst_time_shift_seeker_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-
-static GstCaps *
-gst_time_shift_seeker_transform_caps (GstBaseTransform * trans,
-    GstPadDirection direction, GstCaps * caps, GstCaps * filter)
-{
-
-  return NULL;
-}
-
-static GstCaps *
-gst_time_shift_seeker_fixate_caps (GstBaseTransform * trans,
-    GstPadDirection direction, GstCaps * caps, GstCaps * othercaps)
-{
-
-  return othercaps;
-}
-
-static gboolean
-gst_time_shift_seeker_transform_size (GstBaseTransform * trans,
-    GstPadDirection direction,
-    GstCaps * caps, guint size, GstCaps * othercaps, guint * othersize)
-{
-
-  return FALSE;
-}
-
-static gboolean
-gst_time_shift_seeker_get_unit_size (GstBaseTransform * trans, GstCaps * caps,
-    guint * size)
-{
-
-  return FALSE;
-}
-
-static gboolean
-gst_time_shift_seeker_set_caps (GstBaseTransform * trans, GstCaps * incaps,
-    GstCaps * outcaps)
-{
-
-  return FALSE;
-}
-
 static gboolean
 gst_time_shift_seeker_start (GstBaseTransform * trans)
 {
 
-  return FALSE;
+  return TRUE;
 }
 
 static gboolean
 gst_time_shift_seeker_stop (GstBaseTransform * trans)
 {
 
-  return FALSE;
+  return TRUE;
 }
 
 static gboolean
 gst_time_shift_seeker_sink_event (GstBaseTransform * trans, GstEvent * event)
 {
-
-  return FALSE;
-}
-
-static GstFlowReturn
-gst_time_shift_seeker_transform (GstBaseTransform * trans, GstBuffer * inbuf,
-    GstBuffer * outbuf)
-{
-
-  return GST_FLOW_ERROR;
-}
-
-static GstFlowReturn
-gst_time_shift_seeker_transform_ip (GstBaseTransform * trans, GstBuffer * buf)
-{
-
-  return GST_FLOW_ERROR;
-}
-
-static GstFlowReturn
-gst_time_shift_seeker_prepare_output_buffer (GstBaseTransform * trans,
-    GstBuffer * input, GstBuffer ** buf)
-{
-
-  return GST_FLOW_ERROR;
+  return GST_BASE_TRANSFORM_CLASS (parent_class)->sink_event (trans, event);
 }
 
 static gboolean
 gst_time_shift_seeker_src_event (GstBaseTransform * trans, GstEvent * event)
 {
-
-  return FALSE;
-}
-
-static void
-gst_time_shift_seeker_before_transform (GstBaseTransform * trans, GstBuffer * buffer)
-{
-
+  return GST_BASE_TRANSFORM_CLASS (parent_class)->src_event (trans, event);
 }
 
