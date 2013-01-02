@@ -21,6 +21,7 @@
 
 #include "flucache.h"
 #include "flutsmpegbin.h"
+#include "flutsindex.h"
 
 GST_DEBUG_CATEGORY_EXTERN (ts_mpeg_bin);
 #define GST_CAT_DEFAULT ts_mpeg_bin
@@ -181,6 +182,11 @@ gst_flumpegshifter_bin_init (GstFluMPEGShifterBin * ts_bin)
           NULL);
   g_return_if_fail (gst_element_link_many (ts_bin->parser, ts_bin->timeshifter,
           ts_bin->seeker, NULL));
+
+  GstIndex * index = gst_index_factory_make ("memindex");
+  g_object_set (G_OBJECT (ts_bin->timeshifter), "index", index, NULL);
+  g_object_set (G_OBJECT (ts_bin->seeker), "index", index, NULL);
+  g_object_unref (index);
 
   mirror_pad (ts_bin->parser, "sink", bin);
   mirror_pad (ts_bin->seeker, "src", bin);
