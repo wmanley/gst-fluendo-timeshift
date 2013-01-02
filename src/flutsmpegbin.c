@@ -166,12 +166,17 @@ gst_flumpegshifter_bin_init (GstFluMPEGShifterBin * ts_bin)
       gst_element_factory_make ("flumpegshifter", "timeshifter");
   g_return_if_fail (ts_bin->timeshifter);
 
-  gst_bin_add_many (bin, ts_bin->parser, ts_bin->timeshifter, NULL);
+  ts_bin->seeker =
+      gst_element_factory_make ("timeshiftseeker", "seeker");
+  g_return_if_fail (ts_bin->seeker);
+
+  gst_bin_add_many (bin, ts_bin->parser, ts_bin->timeshifter, ts_bin->seeker,
+          NULL);
   g_return_if_fail (gst_element_link_many (ts_bin->parser, ts_bin->timeshifter,
-          NULL));
+          ts_bin->seeker, NULL));
 
   mirror_pad (ts_bin->parser, "sink", bin);
-  mirror_pad (ts_bin->timeshifter, "src", bin);
+  mirror_pad (ts_bin->seeker, "src", bin);
 }
 
 static void
