@@ -1,5 +1,5 @@
 /* GStreamer
- * Copyright (C) 2013 FIXME <fixme@example.com>
+ * Copyright (C) 2013 Youview TV Ltd. <william.manley@youview.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -19,15 +19,9 @@
 /**
  * SECTION:element-gsttimeshiftseeker
  *
- * The timeshiftseeker element does FIXME stuff.
- *
- * <refsect2>
- * <title>Example launch line</title>
- * |[
- * gst-launch -v fakesrc ! timeshiftseeker ! FIXME ! fakesink
- * ]|
- * FIXME Describe what the pipeline does.
- * </refsect2>
+ * The timeshiftseeker element transforms TIME to BYTES in segment/seek events
+ * based upon a time/byte index.  This element is not useful by itself and
+ * should be used in conjunction with an indexer with a shared index.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -70,14 +64,14 @@ static GstStaticPadTemplate gst_time_shift_seeker_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("application/unknown")
+    GST_STATIC_CAPS ("video/mpegts")
     );
 
 static GstStaticPadTemplate gst_time_shift_seeker_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("application/unknown")
+    GST_STATIC_CAPS ("video/mpegts")
     );
 
 
@@ -98,11 +92,12 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_time_shift_seeker_src_template));
 
-  gst_element_class_set_static_metadata (element_class, "FIXME Long name",
-      "Generic", "FIXME Description", "FIXME <fixme@example.com>");
+  gst_element_class_set_static_metadata (element_class, "Time-shift seeker",
+      "Generic", "Transforms time to bytes as required by seek/segment events",
+      "William Manley <william.manley@youview.com>");
 
   GST_DEBUG_CATEGORY_INIT (gst_time_shift_seeker_debug_category,
-      "gst_time_shift_seeker", 0, "FIXME Description");
+      "gst_time_shift_seeker", 0, "Time-shift seeker");
 
   gobject_class->set_property = gst_time_shift_seeker_set_property;
   gobject_class->get_property = gst_time_shift_seeker_get_property;
