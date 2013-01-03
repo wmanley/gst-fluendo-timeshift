@@ -172,16 +172,18 @@ gst_flumpegshifter_bin_init (GstFluMPEGShifterBin * ts_bin)
   GstBin *bin = GST_BIN (ts_bin);
 
   ts_bin->parser = gst_element_factory_make ("tsparse", "parser");
+  ts_bin->indexer = gst_element_factory_make ("timeshifttsindexer", "indexer");
   ts_bin->timeshifter =
       gst_element_factory_make ("flumpegshifter", "timeshifter");
   ts_bin->seeker = gst_element_factory_make ("timeshiftseeker", "seeker");
-  if (!ts_bin->parser || !ts_bin->timeshifter || !ts_bin->seeker)
+  if (!ts_bin->parser || !ts_bin->indexer || !ts_bin->timeshifter
+      || !ts_bin->seeker)
     goto error;
 
-  gst_bin_add_many (bin, ts_bin->parser, ts_bin->timeshifter, ts_bin->seeker,
-          NULL);
-  g_return_if_fail (gst_element_link_many (ts_bin->parser, ts_bin->timeshifter,
-          ts_bin->seeker, NULL));
+  gst_bin_add_many (bin, ts_bin->parser, ts_bin->indexer, ts_bin->timeshifter,
+          ts_bin->seeker, NULL);
+  g_return_if_fail (gst_element_link_many (ts_bin->parser, ts_bin->indexer,
+          ts_bin->timeshifter, ts_bin->seeker, NULL));
 
   GstIndex * index = gst_index_factory_make ("memindex");
   g_object_set (G_OBJECT (ts_bin->timeshifter), "index", index, NULL);
