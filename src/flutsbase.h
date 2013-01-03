@@ -75,7 +75,6 @@ struct _GstFluTSBase
 
   /* Generated Index */
   GstIndex *index;
-  gint index_id;
   gboolean own_index;
 
   GstEvent *stream_start_event;

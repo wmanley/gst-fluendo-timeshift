@@ -81,8 +81,7 @@ add_index_entry (GstFluTSBase * base, GstClockTime time, guint64 offset)
   associations[1].format = GST_FORMAT_BYTES;
   associations[1].value = offset;
 
-  gst_index_add_associationv (base->index, base->index_id,
-      GST_ASSOCIATION_FLAG_NONE, 2,
+  gst_index_add_associationv (base->index, GST_ASSOCIATION_FLAG_NONE, 2,
       (const GstIndexAssociation *) &associations);
 }
 
@@ -244,8 +243,8 @@ gst_flumpegshifter_get_last_time (GstFluTSBase * base)
     GstIndexEntry *entry = NULL;
     guint64 len = gst_flumpegshifter_get_duration_bytes(base);
 
-    entry = gst_index_get_assoc_entry (base->index, base->index_id,
-        GST_INDEX_LOOKUP_BEFORE, GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES, len);
+    entry = gst_index_get_assoc_entry (base->index, GST_INDEX_LOOKUP_BEFORE,
+        GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES, len);
 
     if (entry) {
       gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
@@ -293,8 +292,8 @@ gst_flumpegshifter_seek (GstFluTSBase * base,
       GST_TIME_ARGS (pos));
 
   /* Let's check if we have an index entry for that seek time */
-  entry = gst_index_get_assoc_entry (base->index, base->index_id,
-      GST_INDEX_LOOKUP_BEFORE, GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_TIME, pos);
+  entry = gst_index_get_assoc_entry (base->index, GST_INDEX_LOOKUP_BEFORE,
+      GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_TIME, pos);
 
   if (entry) {
     gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);

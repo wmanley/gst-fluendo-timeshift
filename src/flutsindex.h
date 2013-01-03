@@ -214,8 +214,10 @@ struct _GstFluTSIndex
   GstObject object;
 
   /*< private > */
+  /* TODO: Remove the concept of seperate writers */
   GHashTable *writers;
   gint last_id;
+  gint id;
 };
 
 struct _GstFluTSIndexClass
@@ -239,22 +241,19 @@ GType gst_flutsindex_get_type (void);
 
 GstFluTSIndex *gst_flutsmemindex_new (void);
 
-gboolean gst_flutsindex_get_writer_id (GstFluTSIndex * index,
-    GstObject * writer, gint * id);
-
 GstFluTSIndexEntry *gst_flutsindex_add_associationv (GstFluTSIndex * index,
-    gint id, GstFluTSIndexAssociationFlags flags, gint n,
+    GstFluTSIndexAssociationFlags flags, gint n,
     const GstFluTSIndexAssociation * list);
 
 GstFluTSIndexEntry *gst_flutsindex_add_id (GstFluTSIndex * index, gint id,
     gchar * description);
 
 GstFluTSIndexEntry *gst_flutsindex_get_assoc_entry (GstFluTSIndex * index,
-    gint id, GstFluTSIndexLookupMethod method,
+    GstFluTSIndexLookupMethod method,
     GstFluTSIndexAssociationFlags flags, GstFormat format, gint64 value);
 
 GstFluTSIndexEntry *gst_flutsindex_get_assoc_entry_full (GstFluTSIndex * index,
-    gint id, GstFluTSIndexLookupMethod method,
+    GstFluTSIndexLookupMethod method,
     GstFluTSIndexAssociationFlags flags, GstFormat format, gint64 value,
     GCompareDataFunc func, gpointer user_data);
 
