@@ -87,8 +87,6 @@ enum
 static GstElementClass *parent_class = NULL;
 static void gst_flutsbase_class_init (GstFluTSBaseClass * klass);
 static void gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass);
-static GstClockTime gst_flutsbase_bytes_to_stream_time(GstFluTSBase * ts,
-    guint64 offset);
 static void gst_flutsbase_replace_index(GstFluTSBase * base,
     GstIndex * new_index, gboolean own);
 
@@ -221,17 +219,9 @@ gst_flutsbase_pop (GstFluTSBase * ts)
   if (G_UNLIKELY (ts->need_newsegment)) {
     GstEvent *newsegment;
 
-    GstClockTime time = gst_flutsbase_bytes_to_stream_time(ts,
-        GST_BUFFER_OFFSET (buffer));
-    if (time != GST_CLOCK_TIME_NONE) {
-      if (G_UNLIKELY (ts->segment.format != GST_FORMAT_TIME)) {
-        gst_segment_init (&ts->segment, GST_FORMAT_TIME);
-      }
-      ts->segment.start = ts->segment.time = time;
-      GST_BUFFER_TIMESTAMP (buffer) = ts->segment.start;
-    } else if (ts->segment.format == GST_FORMAT_BYTES) {
-      ts->segment.start = ts->segment.time = GST_BUFFER_OFFSET (buffer);
-    }
+    ts->segment.start = GST_BUFFER_OFFSET (buffer);
+    ts->segment.time = 0; /* <- Not relevant for FORMAT_BYTES */
+    ts->segment.flags |= GST_SEGMENT_FLAG_RESET;
 
     GST_DEBUG_OBJECT (ts, "pushing segment %" GST_SEGMENT_FORMAT, &ts->segment);
 
@@ -444,42 +434,6 @@ gst_flutsbase_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   return res;
 }
 
-static GstClockTime
-gst_flutsbase_bytes_to_stream_time(GstFluTSBase * ts, guint64 buffer_offset)
-{
-  GstIndexEntry *entry = NULL;
-  GstClockTime ret;
-
-  /* Let's check if we have an index entry for that seek bytes */
-  entry = gst_index_get_assoc_entry (ts->index,
-      GST_INDEX_LOOKUP_BEFORE, GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES,
-      buffer_offset);
-
-  if (entry) {
-    gint64 offset;
-    gint64 time = GST_CLOCK_TIME_NONE;
-
-    gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
-    gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &time);
-
-    GST_DEBUG_OBJECT (ts, "found index entry at %" GST_TIME_FORMAT " pos %"
-        G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
-    if (buffer_offset == offset) {
-      GST_ELEMENT_WARNING (ts, RESOURCE, FAILED, ("Bytes->time conversion inaccurate"), ("Lookup of byte offset not accurate: Returned byte offset %lld doesn't match requested offset %lld.  Time: %lld", offset, buffer_offset, time));
-    }
-    ret = (GstClockTime) time;
-  }
-  else if (buffer_offset == 0) {
-    ret = 0;
-  }
-  else {
-    GST_ELEMENT_WARNING (ts, RESOURCE, FAILED, ("Bytes->time conversion failed"), ("Lookup of byte offset %i failed: No index entry for that byte offset", buffer_offset));
-    printf("Lookup of byte offset %lld failed: No index entry for that byte offset", buffer_offset);
-    ret = GST_CLOCK_TIME_NONE;
-  }
-  return ret;
-}
-
 static gboolean
 gst_flutsbase_handle_custom_upstream (GstFluTSBase * ts, GstEvent * event)
 {
@@ -639,6 +593,7 @@ gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
 
   /* remember the rate */
   ts->segment.rate = rate;
+  ts->segment.flags |= GST_SEGMENT_FLAG_RESET;
 
   GST_DEBUG_OBJECT (ts, "seeking at offset %" G_GUINT64_FORMAT, offset);
 

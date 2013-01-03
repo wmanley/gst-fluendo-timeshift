@@ -40,6 +40,8 @@ struct _GstTimeShiftSeeker
 
   /* Generated Index */
   GstIndex *index;
+
+  gboolean timestamp_next_buffer;
 };
 
 struct _GstTimeShiftSeekerClass
