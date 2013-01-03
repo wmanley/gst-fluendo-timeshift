@@ -451,7 +451,7 @@ gst_flutsbase_bytes_to_stream_time(GstFluTSBase * ts, guint64 buffer_offset)
   GstClockTime ret;
 
   /* Let's check if we have an index entry for that seek bytes */
-  entry = gst_index_get_assoc_entry (ts->index, ts->index_id,
+  entry = gst_index_get_assoc_entry (ts->index,
       GST_INDEX_LOOKUP_BEFORE, GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES,
       buffer_offset);
 
@@ -965,13 +965,10 @@ gst_flutsbase_replace_index(GstFluTSBase * base,
   if (base->index) {
     gst_object_unref (base->index);
     base->index = NULL;
-    base->index_id = 0;
   }
   if (new_index) {
     gst_object_ref (new_index);
     base->index = new_index;
-    gst_index_get_writer_id (base->index, GST_OBJECT (base),
-      &base->index_id);
     base->own_index = own;
   }
 }
@@ -1144,7 +1141,6 @@ gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass)
   ts->cache_size = DEFAULT_CACHE_SIZE;
 
   ts->index = NULL;
-  ts->index_id = 0;
   ts->own_index = FALSE;
 
   GST_DEBUG_OBJECT (ts, "initialized time shift base");
