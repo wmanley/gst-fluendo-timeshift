@@ -46,6 +46,17 @@ class Player(object):
         self.drawingarea = Gtk.DrawingArea()
         box.pack_start(self.drawingarea, True, True, 0)
 
+        hbox = Gtk.Box()
+        hbox.set_spacing (5)
+        hbox.set_orientation(Gtk.Orientation.HORIZONTAL)
+
+        self.stop_button = Gtk.Button(label='Stop')
+        def stop_button_press_cb(widget, event):
+            self.seek_end()
+        self.stop_button.connect('button-press-event', stop_button_press_cb)
+
+        hbox.pack_start(self.stop_button, False, False, 0)
+
         self.adjustment = Gtk.Adjustment(0.0, 0.00, 100.0, 0.1, 1.0, 1.0)
         self.scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=self.adjustment)
         self.scale.set_digits(0)
@@ -55,7 +66,9 @@ class Player(object):
         self.scale.connect('button-release-event', self.scale_button_release_cb)
         self.scale.connect('format-value', self.scale_format_value_cb)
 
-        box.pack_start(self.scale, False, False, 0)
+        hbox.pack_start(self.scale, False, True, 0)
+
+        box.pack_start(hbox, False, False, 0)
 
         # Create GStreamer pipeline
         self.pipeline = Gst.Pipeline()
