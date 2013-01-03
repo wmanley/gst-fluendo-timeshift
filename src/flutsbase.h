@@ -21,7 +21,6 @@
 #define __FLUTSBASE_H__
 
 #include "flucache.h"
-#include "flutsindex.h"
 
 G_BEGIN_DECLS
 #define GST_FLUTSBASE_TYPE \
@@ -70,23 +69,12 @@ struct _GstFluTSBase
 
   gchar *temp_template;
 
-  /* Generated Index */
-  GstIndex *index;
-  gint index_id;
-  gboolean own_index;
-
   GstEvent *stream_start_event;
 };
 
 struct _GstFluTSBaseClass
 {
   GstElementClass parent_class;
-
-  void (*collect_time) (GstFluTSBase * base, guint8 * data, gsize size);
-  guint64 (*seek) (GstFluTSBase * base, GstFormat format, GstSeekType type,
-      gint64 start);
-  void (*update_segment) (GstFluTSBase * base, guint8 * data, gsize size);
-  gboolean (*query) (GstFluTSBase * base, GstQuery * query);
 };
 
 GType gst_flutsbase_get_type (void);

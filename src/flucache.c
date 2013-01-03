@@ -530,6 +530,23 @@ gst_shifter_cache_has_offset (GstShifterCache * cache, guint64 offset)
 }
 
 /**
+ * gst_shifter_cache_get_total_bytes_received:
+ * @cache: a #GstShifterCache
+ *
+ * Returns the total number of bytes which have been written into the cache
+ * equivalent to the "duration" of the cache in bytes.
+ */
+guint64
+gst_shifter_cache_get_total_bytes_received(GstShifterCache * cache)
+{
+  guint64 offset;
+  GST_CACHE_LOCK (cache);
+  offset = cache->h_offset;
+  GST_CACHE_UNLOCK (cache);
+  return offset;
+}
+
+/**
  * gst_shifter_cache_seek:
  * @cache: a #GstShifterCache
  * @offset: byte offset where the cache have to be repositioned.

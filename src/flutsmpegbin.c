@@ -21,6 +21,7 @@
 
 #include "flucache.h"
 #include "flutsmpegbin.h"
+#include "flutsindex.h"
 
 GST_DEBUG_CATEGORY_EXTERN (ts_mpeg_bin);
 #define GST_CAT_DEFAULT ts_mpeg_bin
@@ -155,23 +156,48 @@ mirror_pad (GstElement * element, const gchar * static_pad_name, GstBin * bin)
 }
 
 static void
+gst_element_clear(GstElement ** elem)
+{
+  g_return_if_fail (!elem);
+  if (*elem)
+  {
+    g_object_unref(G_OBJECT(*elem));
+    *elem = NULL;
+  }
+}
+
+static void
 gst_flumpegshifter_bin_init (GstFluMPEGShifterBin * ts_bin)
 {
   GstBin *bin = GST_BIN (ts_bin);
 
   ts_bin->parser = gst_element_factory_make ("tsparse", "parser");
-  g_return_if_fail (ts_bin->parser);
-
+  ts_bin->indexer = gst_element_factory_make ("timeshifttsindexer", "indexer");
   ts_bin->timeshifter =
       gst_element_factory_make ("flumpegshifter", "timeshifter");
-  g_return_if_fail (ts_bin->timeshifter);
+  ts_bin->seeker = gst_element_factory_make ("timeshiftseeker", "seeker");
+  if (!ts_bin->parser || !ts_bin->indexer || !ts_bin->timeshifter
+      || !ts_bin->seeker)
+    goto error;
 
-  gst_bin_add_many (bin, ts_bin->parser, ts_bin->timeshifter, NULL);
-  g_return_if_fail (gst_element_link_many (ts_bin->parser, ts_bin->timeshifter,
-          NULL));
+  gst_bin_add_many (bin, ts_bin->parser, ts_bin->indexer, ts_bin->timeshifter,
+          ts_bin->seeker, NULL);
+  g_return_if_fail (gst_element_link_many (ts_bin->parser, ts_bin->indexer,
+          ts_bin->timeshifter, ts_bin->seeker, NULL));
+
+  GstIndex * index = gst_index_factory_make ("memindex");
+  g_object_set (G_OBJECT (ts_bin->indexer), "index", index, NULL);
+  g_object_set (G_OBJECT (ts_bin->seeker), "index", index, NULL);
+  g_object_unref (index);
 
   mirror_pad (ts_bin->parser, "sink", bin);
-  mirror_pad (ts_bin->timeshifter, "src", bin);
+  mirror_pad (ts_bin->seeker, "src", bin);
+
+  return;
+error:
+  gst_element_clear (&ts_bin->parser);
+  gst_element_clear (&ts_bin->timeshifter);
+  gst_element_clear (&ts_bin->seeker);
 }
 
 static void
@@ -189,7 +215,7 @@ gst_flumpegshifter_bin_handle_message (GstBin * bin, GstMessage * msg)
     }
 
     GST_DEBUG ("Setting PCR PID: %u", pcr_pid);
-    g_object_set (ts_bin->timeshifter, "pcr-pid", pcr_pid, NULL);
+    g_object_set (ts_bin->indexer, "pcr-pid", pcr_pid, NULL);
   }
 
   GST_BIN_CLASS (gst_flumpegshifter_bin_parent_class)

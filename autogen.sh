@@ -6,6 +6,11 @@ package=gst-fluendo-timeshift
 srcfile=src/flutimeshift.c
 
 # source helper functions
+if test ! -f common/gst-autogen.sh;
+then
+  echo "+ Setting up common submodule"
+  svn checkout https://core.fluendo.com/gstreamer/svn/trunk/common
+fi
 . common/gst-autogen.sh
 
 CONFIGURE_DEF_OPT='--enable-maintainer-mode'
