@@ -52,37 +52,10 @@ static void gst_time_shift_ts_indexer_get_property (GObject * object,
 static void gst_time_shift_ts_indexer_dispose (GObject * object);
 static void gst_time_shift_ts_indexer_finalize (GObject * object);
 
-static GstCaps *gst_time_shift_ts_indexer_transform_caps (GstBaseTransform * trans,
-    GstPadDirection direction, GstCaps * caps, GstCaps * filter);
-static GstCaps *
-gst_time_shift_ts_indexer_fixate_caps (GstBaseTransform * trans,
-    GstPadDirection direction, GstCaps * caps, GstCaps * othercaps);
-static gboolean
-gst_time_shift_ts_indexer_transform_size (GstBaseTransform * trans,
-    GstPadDirection direction,
-    GstCaps * caps, guint size, GstCaps * othercaps, guint * othersize);
-static gboolean
-gst_time_shift_ts_indexer_get_unit_size (GstBaseTransform * trans, GstCaps * caps,
-    guint * size);
-static gboolean
-gst_time_shift_ts_indexer_set_caps (GstBaseTransform * trans, GstCaps * incaps,
-    GstCaps * outcaps);
 static gboolean gst_time_shift_ts_indexer_start (GstBaseTransform * trans);
 static gboolean gst_time_shift_ts_indexer_stop (GstBaseTransform * trans);
-static gboolean
-gst_time_shift_ts_indexer_sink_event (GstBaseTransform * trans, GstEvent * event);
-static GstFlowReturn
-gst_time_shift_ts_indexer_transform (GstBaseTransform * trans, GstBuffer * inbuf,
-    GstBuffer * outbuf);
 static GstFlowReturn
 gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * buf);
-static GstFlowReturn
-gst_time_shift_ts_indexer_prepare_output_buffer (GstBaseTransform * trans,
-    GstBuffer * input, GstBuffer ** buf);
-static gboolean
-gst_time_shift_ts_indexer_src_event (GstBaseTransform * trans, GstEvent * event);
-static void
-gst_time_shift_ts_indexer_before_transform (GstBaseTransform * trans, GstBuffer * buffer);
 
 enum
 {
@@ -95,14 +68,14 @@ static GstStaticPadTemplate gst_time_shift_ts_indexer_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("application/unknown")
+    GST_STATIC_CAPS ("video/mpegts")
     );
 
 static GstStaticPadTemplate gst_time_shift_ts_indexer_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("application/unknown")
+    GST_STATIC_CAPS ("video/mpegts")
     );
 
 
@@ -134,26 +107,16 @@ gst_time_shift_ts_indexer_class_init (GstTimeShiftTsIndexerClass * klass)
   gobject_class->get_property = gst_time_shift_ts_indexer_get_property;
   gobject_class->dispose = gst_time_shift_ts_indexer_dispose;
   gobject_class->finalize = gst_time_shift_ts_indexer_finalize;
-  base_transform_class->transform_caps = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_transform_caps);
-  base_transform_class->fixate_caps = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_fixate_caps);
-  base_transform_class->transform_size = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_transform_size);
-  base_transform_class->get_unit_size = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_get_unit_size);
-  base_transform_class->set_caps = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_set_caps);
   base_transform_class->start = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_start);
   base_transform_class->stop = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_stop);
-  base_transform_class->sink_event = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_sink_event);
-  base_transform_class->transform = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_transform);
   base_transform_class->transform_ip = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_transform_ip);
-  base_transform_class->prepare_output_buffer = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_prepare_output_buffer);
-  base_transform_class->src_event = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_src_event);
-  base_transform_class->before_transform = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_before_transform);
-
 }
 
 static void
-gst_time_shift_ts_indexer_init (GstTimeShiftTsIndexer * timeshifttsindexer)
+gst_time_shift_ts_indexer_init (GstTimeShiftTsIndexer * indexer)
 {
-
+  GstBaseTransform *base = GST_BASE_TRANSFORM (indexer);
+  gst_base_transform_set_passthrough(base, TRUE);
 }
 
 void
@@ -202,102 +165,24 @@ gst_time_shift_ts_indexer_finalize (GObject * object)
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
-
-static GstCaps *
-gst_time_shift_ts_indexer_transform_caps (GstBaseTransform * trans,
-    GstPadDirection direction, GstCaps * caps, GstCaps * filter)
-{
-
-  return NULL;
-}
-
-static GstCaps *
-gst_time_shift_ts_indexer_fixate_caps (GstBaseTransform * trans,
-    GstPadDirection direction, GstCaps * caps, GstCaps * othercaps)
-{
-
-  return othercaps;
-}
-
-static gboolean
-gst_time_shift_ts_indexer_transform_size (GstBaseTransform * trans,
-    GstPadDirection direction,
-    GstCaps * caps, guint size, GstCaps * othercaps, guint * othersize)
-{
-
-  return FALSE;
-}
-
-static gboolean
-gst_time_shift_ts_indexer_get_unit_size (GstBaseTransform * trans, GstCaps * caps,
-    guint * size)
-{
-
-  return FALSE;
-}
-
-static gboolean
-gst_time_shift_ts_indexer_set_caps (GstBaseTransform * trans, GstCaps * incaps,
-    GstCaps * outcaps)
-{
-
-  return FALSE;
-}
-
 static gboolean
 gst_time_shift_ts_indexer_start (GstBaseTransform * trans)
 {
 
-  return FALSE;
+  return TRUE;
 }
 
 static gboolean
 gst_time_shift_ts_indexer_stop (GstBaseTransform * trans)
 {
 
-  return FALSE;
-}
-
-static gboolean
-gst_time_shift_ts_indexer_sink_event (GstBaseTransform * trans, GstEvent * event)
-{
-
-  return FALSE;
-}
-
-static GstFlowReturn
-gst_time_shift_ts_indexer_transform (GstBaseTransform * trans, GstBuffer * inbuf,
-    GstBuffer * outbuf)
-{
-
-  return GST_FLOW_ERROR;
+  return TRUE;
 }
 
 static GstFlowReturn
 gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * buf)
 {
 
-  return GST_FLOW_ERROR;
-}
-
-static GstFlowReturn
-gst_time_shift_ts_indexer_prepare_output_buffer (GstBaseTransform * trans,
-    GstBuffer * input, GstBuffer ** buf)
-{
-
-  return GST_FLOW_ERROR;
-}
-
-static gboolean
-gst_time_shift_ts_indexer_src_event (GstBaseTransform * trans, GstEvent * event)
-{
-
-  return FALSE;
-}
-
-static void
-gst_time_shift_ts_indexer_before_transform (GstBaseTransform * trans, GstBuffer * buffer)
-{
-
+  return GST_FLOW_OK;
 }
 
