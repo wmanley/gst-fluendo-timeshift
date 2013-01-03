@@ -58,6 +58,8 @@ static void gst_time_shift_seeker_replace_index(GstTimeShiftSeeker * seeker,
 static gboolean
 gst_time_shift_seeker_query (GstBaseTransform *trans, GstPadDirection direction,
                              GstQuery *query);
+static GstFlowReturn
+gst_time_shift_seeker_transform_ip (GstBaseTransform * trans, GstBuffer * buf);
 
 enum
 {
@@ -103,6 +105,7 @@ gst_time_shift_seeker_class_init (GstTimeShiftSeekerClass * klass)
   base_transform_class->sink_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_sink_event);
   base_transform_class->src_event = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_src_event);
   base_transform_class->query = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_query);
+  base_transform_class->transform_ip = GST_DEBUG_FUNCPTR (gst_time_shift_seeker_transform_ip);
 
   gst_element_class_add_pad_template (element_class,
       gst_static_pad_template_get (&gst_time_shift_seeker_sink_template));
@@ -209,20 +212,93 @@ gst_time_shift_seeker_stop (GstBaseTransform * trans)
   return TRUE;
 }
 
+static GstClockTime
+gst_time_shift_seeker_bytes_to_stream_time(GstTimeShiftSeeker * ts,
+    guint64 buffer_offset)
+{
+  GstIndexEntry *entry = NULL;
+  GstClockTime ret;
+
+  /* Let's check if we have an index entry for that seek bytes */
+  entry = gst_index_get_assoc_entry (ts->index,
+      GST_INDEX_LOOKUP_BEFORE, GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES,
+      buffer_offset);
+
+  if (entry) {
+    gint64 offset;
+    gint64 time = GST_CLOCK_TIME_NONE;
+
+    gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
+    gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &time);
+
+    GST_DEBUG_OBJECT (ts, "found index entry at %" GST_TIME_FORMAT " pos %"
+        G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
+    if (buffer_offset == offset) {
+      GST_ELEMENT_WARNING (ts, RESOURCE, FAILED, ("Bytes->time conversion inaccurate"), ("Lookup of byte offset not accurate: Returned byte offset %lld doesn't match requested offset %lld.  Time: %lld", offset, buffer_offset, time));
+    }
+    ret = (GstClockTime) time;
+  }
+  else if (buffer_offset == 0) {
+    ret = 0;
+  }
+  else {
+    GST_ELEMENT_WARNING (ts, RESOURCE, FAILED, ("Bytes->time conversion failed"), ("Lookup of byte offset %i failed: No index entry for that byte offset", buffer_offset));
+    ret = GST_CLOCK_TIME_NONE;
+  }
+  return ret;
+}
+
+static void
+gst_time_shift_seeker_transform_segment_event (GstTimeShiftSeeker *seeker,
+    GstEvent ** event)
+{
+  GstEvent *newevent;
+  GstSegment segment;
+
+  gst_event_copy_segment (*event, &segment);
+  if (segment.format != GST_FORMAT_BYTES) {
+    GST_DEBUG_OBJECT (seeker, "time shift seeker received non-bytes segment");
+    goto beach;
+  }
+  if (!(segment.flags & GST_SEGMENT_FLAG_RESET)) {
+    /* We can only handle flushing segments ATM as otherwise running time is >0
+       so filling in segment.base becomes trickier TODO: Fix this. */
+    GST_DEBUG_OBJECT (seeker, "time shift seeker can only deal with flushing "
+                              "seeks");
+    goto beach;
+  }
+  if (!seeker->index) {
+    GST_DEBUG_OBJECT (seeker, "no index");
+    goto beach;
+  }
+
+  segment.format = GST_FORMAT_TIME;
+  segment.base = 0;
+  segment.start = gst_time_shift_seeker_bytes_to_stream_time (seeker, segment.start);
+  if (segment.stop != -1) {
+    segment.stop = gst_time_shift_seeker_bytes_to_stream_time (seeker, segment.stop);
+  }
+  segment.time = segment.start;
+
+  newevent = gst_event_new_segment(&segment);
+  gst_event_set_seqnum (newevent, gst_event_get_seqnum (*event));
+  gst_event_replace (event, newevent);
+
+  seeker->timestamp_next_buffer = TRUE;
+
+  GST_DEBUG_OBJECT (seeker, "forwarding segment %" GST_SEGMENT_FORMAT, &segment);
+beach:
+  return;
+}
+
 static gboolean
 gst_time_shift_seeker_sink_event (GstBaseTransform * trans, GstEvent * event)
 {
   GstTimeShiftSeeker *seeker = GST_TIME_SHIFT_SEEKER (trans);
 
-  switch (GST_EVENT_TYPE(event)) {
-    case GST_EVENT_SEGMENT:
-      if (!seeker->index) {
-        GST_ELEMENT_WARNING (trans, CORE, SEEK, NULL, ("Seeker has no index set"));
-      }
-      break;
-    default:
-      break;
-  };
+  if (GST_EVENT_TYPE(event) == GST_EVENT_SEGMENT) {
+    gst_time_shift_seeker_transform_segment_event (seeker, &event);
+  }
   return GST_BASE_TRANSFORM_CLASS (parent_class)->sink_event (trans, event);
 }
 
@@ -423,3 +499,15 @@ gst_time_shift_seeker_query (GstBaseTransform *base, GstPadDirection direction,
                                                          query);
 }
 
+static GstFlowReturn
+gst_time_shift_seeker_transform_ip (GstBaseTransform * base, GstBuffer * buf)
+{
+  GstTimeShiftSeeker * seeker = GST_TIME_SHIFT_SEEKER (base);
+  g_assert (gst_buffer_is_writable (buf));
+  if (seeker->timestamp_next_buffer) {
+    GST_BUFFER_TIMESTAMP (buf) = gst_time_shift_seeker_bytes_to_stream_time(
+        seeker, GST_BUFFER_OFFSET (buf));
+    seeker->timestamp_next_buffer = FALSE;
+  }
+  return GST_FLOW_OK;
+}
