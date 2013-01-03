@@ -45,7 +45,6 @@ enum
   PROP_CACHE_SIZE,
   PROP_RECORDING_TEMPLATE,
   PROP_RECORDING_REMOVE,
-  PROP_INDEX,
   PROP_LAST
 };
 
@@ -87,8 +86,6 @@ enum
 static GstElementClass *parent_class = NULL;
 static void gst_flutsbase_class_init (GstFluTSBaseClass * klass);
 static void gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass);
-static void gst_flutsbase_replace_index(GstFluTSBase * base,
-    GstIndex * new_index, gboolean own);
 
 GType
 gst_flutsbase_get_type (void)
@@ -127,17 +124,6 @@ gst_flutsbase_start (GstFluTSBase * ts)
 
   ts->cache = gst_shifter_cache_new (ts->cache_size, ts->recording_template);
   gst_shifter_cache_set_autoremove (ts->cache, ts->recording_remove);
-
-  /* If this is our own index destroy it as the old entries might be wrong */
-  if (ts->own_index) {
-    gst_flutsbase_replace_index(ts, NULL, FALSE);
-  }
-
-  /* If no index was created, generate one */
-  if (G_UNLIKELY (!ts->index)) {
-    GST_DEBUG_OBJECT (ts, "no index provided creating our own");
-    gst_flutsbase_replace_index(ts, gst_index_factory_make ("memindex"), FALSE);
-  }
 
   gst_segment_init (&ts->segment, GST_FORMAT_BYTES);
   ts->recording_started = FALSE;
@@ -354,8 +340,6 @@ out_flushing:
 static GstFlowReturn
 gst_flutsbase_push (GstFluTSBase * ts, guint8 * data, gsize size)
 {
-  GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
-
   /* we have to lock since we span threads */
   FLOW_MUTEX_LOCK_CHECK (ts, ts->sinkresult, out_flushing);
   /* when we received EOS, we refuse more data */
@@ -365,10 +349,6 @@ gst_flutsbase_push (GstFluTSBase * ts, guint8 * data, gsize size)
   if (ts->unexpected)
     goto out_unexpected;
 
-  /* collect time info from that buffer */
-  if (bclass->collect_time) {
-    bclass->collect_time (ts, data, size);
-  }
   /* add data to the cache */
   gst_shifter_cache_push (ts->cache, data, size);
   FLOW_SIGNAL_ADD (ts);
@@ -895,21 +875,6 @@ gst_flutsbase_change_state (GstElement * element, GstStateChange transition)
 }
 
 static void
-gst_flutsbase_replace_index(GstFluTSBase * base,
-    GstIndex * new_index, gboolean own)
-{
-  if (base->index) {
-    gst_object_unref (base->index);
-    base->index = NULL;
-  }
-  if (new_index) {
-    gst_object_ref (new_index);
-    base->index = new_index;
-    base->own_index = own;
-  }
-}
-
-static void
 gst_flutsbase_set_property (GObject * object,
     guint prop_id, const GValue * value, GParamSpec * pspec)
 {
@@ -931,9 +896,6 @@ gst_flutsbase_set_property (GObject * object,
       if (ts->cache) {
         gst_shifter_cache_set_autoremove (ts->cache, ts->recording_remove);
       }
-      break;
-    case PROP_INDEX:
-      gst_flutsbase_replace_index(ts, g_value_dup_object(value), FALSE);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -961,9 +923,6 @@ gst_flutsbase_get_property (GObject * object,
     case PROP_RECORDING_REMOVE:
       g_value_set_boolean (value, ts->recording_remove);
       break;
-    case PROP_INDEX:
-      g_value_set_object(value, ts->index);
-      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -979,7 +938,6 @@ gst_flutsbase_finalize (GObject * object)
 
   GST_DEBUG_OBJECT (ts, "finalizing tsbase");
 
-  gst_flutsbase_replace_index(ts, NULL, FALSE);
   g_mutex_free (ts->flow_lock);
   g_cond_free (ts->buffer_add);
 
@@ -1019,11 +977,6 @@ gst_flutsbase_class_init (GstFluTSBaseClass * klass)
           "Remove the recorded file after use",
           DEFAULT_RECORDING_REMOVE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gclass, PROP_INDEX,
-      g_param_spec_object ("index", "Index",
-          "The index into which to write indexing information",
-          GST_TYPE_INDEX, (G_PARAM_READABLE | G_PARAM_WRITABLE)));
 
   /* set several parent class virtual functions */
   gclass->finalize = gst_flutsbase_finalize;
@@ -1075,9 +1028,6 @@ gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass)
   ts->recording_remove = DEFAULT_RECORDING_REMOVE;
 
   ts->cache_size = DEFAULT_CACHE_SIZE;
-
-  ts->index = NULL;
-  ts->own_index = FALSE;
 
   GST_DEBUG_OBJECT (ts, "initialized time shift base");
 }

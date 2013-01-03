@@ -186,7 +186,7 @@ gst_flumpegshifter_bin_init (GstFluMPEGShifterBin * ts_bin)
           ts_bin->timeshifter, ts_bin->seeker, NULL));
 
   GstIndex * index = gst_index_factory_make ("memindex");
-  g_object_set (G_OBJECT (ts_bin->timeshifter), "index", index, NULL);
+  g_object_set (G_OBJECT (ts_bin->indexer), "index", index, NULL);
   g_object_set (G_OBJECT (ts_bin->seeker), "index", index, NULL);
   g_object_unref (index);
 
@@ -215,7 +215,7 @@ gst_flumpegshifter_bin_handle_message (GstBin * bin, GstMessage * msg)
     }
 
     GST_DEBUG ("Setting PCR PID: %u", pcr_pid);
-    g_object_set (ts_bin->timeshifter, "pcr-pid", pcr_pid, NULL);
+    g_object_set (ts_bin->indexer, "pcr-pid", pcr_pid, NULL);
   }
 
   GST_BIN_CLASS (gst_flumpegshifter_bin_parent_class)
