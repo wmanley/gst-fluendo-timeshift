@@ -10,7 +10,8 @@ libgstflutimeshift_la_SOURCES = \
   flutsmpegbin.c \
   flutsindex.c \
   flutsmemindex.c \
-  gsttimeshiftseeker.c
+  gsttimeshiftseeker.c \
+  gsttimeshifttsindexer.c
 
 libgstflutimeshift_la_CFLAGS = \
  -I$(top_srcdir)/common \
@@ -36,5 +37,6 @@ noinst_HEADERS = \
   flutsmpeg.h \
   flutsmpegbin.h \
   flutsindex.h \
-  gsttimeshiftseeker.h
+  gsttimeshiftseeker.h \
+  gsttimeshifttsindexer.h
 
