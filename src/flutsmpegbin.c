@@ -87,7 +87,7 @@ gst_flumpegshifter_bin_get_property (GObject * object,
       break;
 
     case PROP_TEMP_TEMPLATE:
-      g_object_set_property (G_OBJECT (ts_bin->timeshifter),
+      g_object_get_property (G_OBJECT (ts_bin->timeshifter),
           "temp-template", value);
       break;
 
