@@ -21,6 +21,7 @@
 #define _GST_TIME_SHIFT_SEEKER_H_
 
 #include <gst/base/gstbasetransform.h>
+#include "flutsindex.h"
 
 G_BEGIN_DECLS
 
@@ -36,6 +37,10 @@ typedef struct _GstTimeShiftSeekerClass GstTimeShiftSeekerClass;
 struct _GstTimeShiftSeeker
 {
   GstBaseTransform base_timeshiftseeker;
+
+  /* Generated Index */
+  GstIndex *index;
+  gint index_id;
 };
 
 struct _GstTimeShiftSeekerClass
