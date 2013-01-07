@@ -294,8 +294,8 @@ gst_shifter_cache_new (gsize size, gchar * filename_template)
   cache->h_rb_offset = 0;
 
   /* Ring buffer */
-  gst_filemem_allocator_init (size, "timeshifter-ringbuffer");
-  cache->alloc = gst_allocator_find ("timeshifter-ringbuffer");
+  gst_filemem_allocator_init (size, "/tmp/gstfilememalloc-XXXXXX");
+  cache->alloc = gst_allocator_find (GST_ALLOCATOR_FILEMEM);
   g_return_val_if_fail (cache->alloc, NULL);
   nslots = size / CACHE_SLOT_SIZE;
   cache->nslots = nslots;
