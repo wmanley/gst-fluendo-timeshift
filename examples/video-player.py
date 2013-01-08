@@ -1,3 +1,4 @@
+#!/usr/bin/python
 '''
 A simple GUI for playing TS streams.
 Prticularily this scrip was devised to evaluate/demonstrate timeshifting.
