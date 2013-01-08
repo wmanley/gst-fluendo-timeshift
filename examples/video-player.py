@@ -28,7 +28,7 @@ GObject.threads_init()
 Gst.init(None)
 
 class Player(object):
-    def __init__(self):
+    def __init__(self, src_description):
         self.position = Gst.CLOCK_TIME_NONE
         self.duration = Gst.CLOCK_TIME_NONE
         self.pcr_configured = False
@@ -85,28 +85,12 @@ class Player(object):
         self.bus.connect('sync-message::element', self.on_sync_message)
 
         # Create GStreamer elements
-        if 1 == len(sys.argv):
-            '''
-            Example stream (BBC One) can be generated as follows:
-
-            gst-launch-0.10 -v \
-              dvbsrc \
-                bandwidth=8 code-rate-lp=NONE code-rate-hp=2/3 guard=32 \
-                hierarchy=NONE modulation="QAM 64" trans-mode=8k \
-                inversion=AUTO frequency=490000000 pids=100:101 symbol-rate=27500 \
-              ! queue ! udpsink host=<target IP> port=10000
-
-            '''
-            src = 'udpsrc port=10000 caps="video/mpegts, media=(string)video, encoding-name=(string)MP2T-ES"'
-        else:
-            src = 'souphttpsrc is-live=true location=%s' % (sys.argv[1])
-
         self.playbin = Gst.parse_bin_from_description(
-            '%s' \
+            src_description + \
             ' ! queue ' \
             ' ! flumpegshifterbin name=timeshifter' \
                 ' cache-size=128000000 temp-template=/tmp/timeshifter-XXXXXX' \
-            ' ! decodebin ! autovideosink' % (src),
+            ' ! decodebin ! autovideosink',
             False);
         self.pipeline.add(self.playbin)
 
@@ -238,7 +222,25 @@ class Player(object):
     def on_error(self, bus, msg):
         print('on_error():', msg.parse_error())
 
+def main(argv):
+    if len(sys.argv) == 1:
+        '''
+        Example stream (BBC One) can be generated as follows:
 
-p = Player()
-p.run()
+        gst-launch-0.10 -v \
+          dvbsrc \
+            bandwidth=8 code-rate-lp=NONE code-rate-hp=2/3 guard=32 \
+            hierarchy=NONE modulation="QAM 64" trans-mode=8k \
+            inversion=AUTO frequency=490000000 pids=100:101 symbol-rate=27500 \
+          ! queue ! udpsink host=<target IP> port=10000
+
+        '''
+        src = 'udpsrc port=10000 caps="video/mpegts, media=(string)video, encoding-name=(string)MP2T-ES"'
+    else:
+        src = 'souphttpsrc is-live=true location=%s' % (sys.argv[1])
+    p = Player(src)
+    p.run()
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))
 
