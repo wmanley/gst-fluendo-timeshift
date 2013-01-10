@@ -43,7 +43,7 @@ enum
 {
   PROP_0,
   PROP_CACHE_SIZE,
-  PROP_TEMP_TEMPLATE,
+  PROP_ALLOCATOR_NAME,
   PROP_LAST
 };
 
@@ -121,7 +121,7 @@ gst_flutsbase_start (GstFluTSBase * ts)
     ts->cache = NULL;
   }
 
-  ts->cache = gst_shifter_cache_new (ts->cache_size, ts->temp_template);
+  ts->cache = gst_shifter_cache_new (ts->cache_size, ts->allocator_name);
 
   /* If this is our own index destroy it as the old entries might be wrong */
   if (ts->own_index) {
@@ -145,7 +145,7 @@ gst_flutsbase_start (GstFluTSBase * ts)
 }
 
 static void
-gst_flutsbase_set_temp_template (GstFluTSBase * ts, const gchar * template)
+gst_flutsbase_set_allocator (GstFluTSBase * ts, const gchar * allocator)
 {
   GstState state;
 
@@ -157,8 +157,8 @@ gst_flutsbase_set_temp_template (GstFluTSBase * ts, const gchar * template)
   GST_OBJECT_UNLOCK (ts);
 
   /* set new location */
-  g_free (ts->temp_template);
-  ts->temp_template = g_strdup (template);
+  g_free (ts->allocator_name);
+  ts->allocator_name = g_strdup (allocator);
 
   return;
 
@@ -166,7 +166,7 @@ gst_flutsbase_set_temp_template (GstFluTSBase * ts, const gchar * template)
 wrong_state:
   {
     GST_WARNING_OBJECT (ts,
-        "setting temp-template property in wrong state");
+        "setting allocator-name property in wrong state");
     GST_OBJECT_UNLOCK (ts);
   }
 }
@@ -838,8 +838,8 @@ gst_flutsbase_set_property (GObject * object,
     case PROP_CACHE_SIZE:
       ts->cache_size = g_value_get_uint64 (value);
       break;
-    case PROP_TEMP_TEMPLATE:
-      gst_flutsbase_set_temp_template (ts, g_value_get_string (value));
+    case PROP_ALLOCATOR_NAME:
+      gst_flutsbase_set_allocator (ts, g_value_get_string (value));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -861,8 +861,8 @@ gst_flutsbase_get_property (GObject * object,
     case PROP_CACHE_SIZE:
       g_value_set_uint64 (value, ts->cache_size);
       break;
-    case PROP_TEMP_TEMPLATE:
-      g_value_set_string (value, ts->temp_template);
+    case PROP_ALLOCATOR_NAME:
+      g_value_set_string (value, ts->allocator_name);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -886,8 +886,7 @@ gst_flutsbase_finalize (GObject * object)
   g_mutex_free (ts->flow_lock);
   g_cond_free (ts->buffer_add);
 
-  /* recording_file path cleanup  */
-  g_free (ts->temp_template);
+  g_free (ts->allocator_name);
 
   if (ts->index) {
     gst_object_unref (ts->index);
@@ -916,10 +915,10 @@ gst_flutsbase_class_init (GstFluTSBaseClass * klass)
           DEFAULT_MIN_CACHE_SIZE, G_MAXUINT64, DEFAULT_CACHE_SIZE,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
-  g_object_class_install_property (gclass, PROP_TEMP_TEMPLATE,
-      g_param_spec_string ("temp-template", "File Template",
-          "File template for temporary storage, should contain directory "
-          "and a prefix filename.",
+  g_object_class_install_property (gclass, PROP_ALLOCATOR_NAME,
+      g_param_spec_string ("allocator-name", "Allocator name",
+          "The allocator to be used to allocate space for "
+          "the ring buffer (NULL - default system allocator).",
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /* set several parent class virtual functions */
@@ -967,8 +966,7 @@ gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass)
   ts->flow_lock = g_mutex_new ();
   ts->buffer_add = g_cond_new ();
 
-  /* tempfile related */
-  ts->temp_template = NULL;
+  ts->allocator_name = NULL;
 
   ts->cache_size = DEFAULT_CACHE_SIZE;
 

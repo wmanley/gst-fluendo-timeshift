@@ -35,7 +35,7 @@ G_BEGIN_DECLS
  */
 typedef struct _GstShifterCache GstShifterCache;
 
-GstShifterCache *gst_shifter_cache_new (gsize size, gchar * filename_template);
+GstShifterCache *gst_shifter_cache_new (gsize size, const gchar * allocator_name);
 
 GstShifterCache *gst_shifter_cache_ref (GstShifterCache * cache);
 void gst_shifter_cache_unref (GstShifterCache * cache);

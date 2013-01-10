@@ -68,7 +68,7 @@ struct _GstFluTSBase
   GMutex *flow_lock;            /* lock for flow control */
   GCond *buffer_add;            /* signals buffers added to the cache */
 
-  gchar *temp_template;
+  gchar *allocator_name;
 
   /* Generated Index */
   GstIndex *index;

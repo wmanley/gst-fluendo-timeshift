@@ -77,12 +77,6 @@ slot_available (Slot * slot, gsize * size)
   return FALSE;
 }
 
-static inline guint
-slot_fullness (Slot * slot)
-{
-  return slot->size;
-}
-
 /* returns TRUE if slot is full */
 static inline gboolean
 slot_write (Slot * slot, guint8 * data, guint size, guint64 offset)
@@ -277,7 +271,7 @@ gst_shifter_cache_flush (GstShifterCache * cache)
  *
  */
 GstShifterCache *
-gst_shifter_cache_new (gsize size, gchar * filename_template)
+gst_shifter_cache_new (gsize size, const gchar * allocator_name)
 {
   GstShifterCache *cache;
   guint nslots;
@@ -294,8 +288,7 @@ gst_shifter_cache_new (gsize size, gchar * filename_template)
   cache->h_rb_offset = 0;
 
   /* Ring buffer */
-  gst_filemem_allocator_init (size, "/tmp/gstfilememalloc-XXXXXX");
-  cache->alloc = gst_allocator_find (GST_ALLOCATOR_FILEMEM);
+  cache->alloc = gst_allocator_find (allocator_name);
   g_return_val_if_fail (cache->alloc, NULL);
   nslots = size / CACHE_SLOT_SIZE;
   cache->nslots = nslots;
