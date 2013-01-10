@@ -84,12 +84,16 @@ class Player(object):
         self.bus.enable_sync_message_emission()
         self.bus.connect('sync-message::element', self.on_sync_message)
 
+        # TODO: No introspection for the FileMemAllocator yet
+        # Gst.FileMemAllocator.init(512 * 1024 * 1024, '/tmp/fma-XXXXXX')
+
         # Create GStreamer elements
+        # TODO: Use allocator-name property
         self.playbin = Gst.parse_bin_from_description(
             src_description + \
             ' ! queue ' \
             ' ! flumpegshifterbin name=timeshifter' \
-                ' cache-size=128000000 temp-template=/tmp/timeshifter-XXXXXX' \
+                ' cache-size=128000000' \
             ' ! decodebin ! autovideosink',
             False);
         self.pipeline.add(self.playbin)
@@ -103,17 +107,6 @@ class Player(object):
             value = self.position * 100.0 / self.duration
             self.adjustment.set_value(value)
 
-        '''
-        # a work-around for the timeshifter failing to recycle cache slots 
-        if not self.is_recording:
-            structure = Gst.Structure.new_empty("shifter-start-recording")
-            event = Gst.Event.new_custom(Gst.EventType.CUSTOM_UPSTREAM, structure)
-            if self.pipeline.send_event(event):
-                print "start recording"
-                self.is_recording = True
-            else:
-                print "start recording failed"
-        '''
         return True
     
     def query_position(self):
