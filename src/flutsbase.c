@@ -123,23 +123,6 @@ gst_flutsbase_start (GstFluTSBase * ts)
 
   ts->cache = gst_shifter_cache_new (ts->cache_size, ts->allocator_name);
 
-  /* If this is our own index destroy it as the old entries might be wrong */
-  if (ts->own_index) {
-    gst_object_unref (ts->index);
-    ts->index = NULL;
-    ts->own_index = FALSE;
-  }
-
-  /* If no index was created, generate one */
-  if (G_UNLIKELY (!ts->index)) {
-    GST_DEBUG_OBJECT (ts, "no index provided creating our own");
-
-    ts->index = gst_index_factory_make ("memindex");
-
-    gst_index_get_writer_id (ts->index, GST_OBJECT (ts), &ts->index_id);
-    ts->own_index = TRUE;
-  }
-
   gst_segment_init (&ts->segment, GST_FORMAT_BYTES);
   FLOW_MUTEX_UNLOCK (ts);
 }
@@ -195,18 +178,11 @@ gst_flutsbase_pop (GstFluTSBase * ts)
   }
 
   if (G_UNLIKELY (ts->need_newsegment)) {
-    GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
     GstEvent *newsegment;
 
-    if (bclass->update_segment) {
-      GstMapInfo map;
-      gst_buffer_map (buffer, &map, GST_MAP_READ);
-      bclass->update_segment (ts, map.data, map.size);
-      gst_buffer_unmap (buffer, &map);
-      GST_BUFFER_TIMESTAMP (buffer) = ts->segment.start;
-    } else if (ts->segment.format == GST_FORMAT_BYTES) {
-      ts->segment.start = ts->segment.time = GST_BUFFER_OFFSET (buffer);
-    }
+    ts->segment.start = GST_BUFFER_OFFSET (buffer);
+    ts->segment.time = 0; /* <- Not relevant for FORMAT_BYTES */
+    ts->segment.flags |= GST_SEGMENT_FLAG_RESET;
 
     GST_DEBUG_OBJECT (ts, "pushing segment %" GST_SEGMENT_FORMAT, &ts->segment);
 
@@ -339,8 +315,6 @@ out_flushing:
 static GstFlowReturn
 gst_flutsbase_push (GstFluTSBase * ts, guint8 * data, gsize size)
 {
-  GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
-
   /* we have to lock since we span threads */
   FLOW_MUTEX_LOCK_CHECK (ts, ts->sinkresult, out_flushing);
   /* when we received EOS, we refuse more data */
@@ -350,10 +324,6 @@ gst_flutsbase_push (GstFluTSBase * ts, guint8 * data, gsize size)
   if (ts->unexpected)
     goto out_unexpected;
 
-  /* collect time info from that buffer */
-  if (bclass->collect_time) {
-    bclass->collect_time (ts, data, size);
-  }
   /* add data to the cache */
   if (!gst_shifter_cache_push (ts->cache, data, size)) {
     goto out_eos;
@@ -408,87 +378,6 @@ gst_flutsbase_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
   gst_buffer_unref (buffer);
  
   return res;
-}
-
-static gboolean
-gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
-{
-  GstFormat format;
-  GstSeekFlags flags;
-  GstSeekType start_type, stop_type;
-  gint64 start, stop;
-  gdouble rate;
-  guint64 offset = 0;
-  gboolean ret = FALSE;
-
-  GstFluTSBaseClass *bclass;
-
-  bclass = GST_FLUTSBASE_GET_CLASS (ts);
-
-  gst_event_parse_seek (event, &rate, &format, &flags,
-      &start_type, &start, &stop_type, &stop);
-
-  if (!(flags & GST_SEEK_FLAG_FLUSH)) {
-    GST_WARNING_OBJECT (ts, "we only support flushing seeks");
-    goto beach;
-  }
-
-  if (rate < 0.0) {
-    GST_WARNING_OBJECT (ts, "we only support forward playback");
-    goto beach;
-  }
-
-  if (bclass->seek) {
-    FLOW_MUTEX_LOCK (ts);
-    offset = bclass->seek (ts, format, start_type, start);
-    FLOW_MUTEX_UNLOCK (ts);
-    if (G_UNLIKELY (offset == (guint64) -1)) {
-      GST_WARNING_OBJECT (ts, "seek failed");
-      goto beach;
-    }
-  } else {
-    GST_WARNING_OBJECT (ts, "seeking is not implemented");
-    goto beach;
-  }
-
-  /* remember the rate */
-  ts->segment.rate = rate;
-
-  GST_DEBUG_OBJECT (ts, "seeking at offset %" G_GUINT64_FORMAT, offset);
-
-  /* now unblock the loop function */
-  FLOW_MUTEX_LOCK (ts);
-  /* Flush start downstream to make sure loop is idle */
-  gst_pad_push_event (ts->srcpad, gst_event_new_flush_start ());
-  ts->srcresult = GST_FLOW_FLUSHING;
-  /* unblock the loop function */
-  FLOW_SIGNAL_ADD (ts);
-  FLOW_MUTEX_UNLOCK (ts);
-
-  /* make sure it pauses, this should happen since we sent
-   * flush_start downstream. */
-  gst_pad_pause_task (ts->srcpad);
-  GST_DEBUG_OBJECT (ts, "loop stopped");
-  /* Flush stop downstream to ensure that all pushed cache slots come back
-   * to our control */
-  gst_pad_push_event (ts->srcpad, gst_event_new_flush_stop (TRUE));
-
-  /* Reconfigure the cache to handle the new offset */
-  FLOW_MUTEX_LOCK (ts);
-  gst_shifter_cache_seek (ts->cache, offset);
-
-  /* Restart the pushing loop */
-  ts->srcresult = GST_FLOW_OK;
-  ts->is_eos = FALSE;
-  ts->unexpected = FALSE;
-  ts->need_newsegment = TRUE;
-  gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
-      ts->srcpad, NULL);
-  FLOW_MUTEX_UNLOCK (ts);
-  GST_DEBUG_OBJECT (ts, "loop started");
-  ret = TRUE;
-beach:
-  return ret;
 }
 
 static inline gboolean
@@ -578,6 +467,96 @@ gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
   return ret;
 }
 
+static guint64
+gst_flutsbase_get_bytes_offset(GstFluTSBase * ts, GstFormat format,
+    GstSeekType type, gint64 start)
+{
+  guint64 offset;
+
+  if (format != GST_FORMAT_BYTES) {
+    GST_WARNING_OBJECT (ts, "can only seek in bytes");
+    offset = -1;
+  } else {
+    GST_DEBUG_OBJECT (ts, "seeking at bytes %" G_GINT64_FORMAT " type %d",
+        start, type);
+
+    if (type == GST_SEEK_TYPE_SET) {
+      offset = start;
+    } else if (type == GST_SEEK_TYPE_END) {
+      offset = gst_shifter_cache_get_total_bytes_received(ts->cache) + start;
+    } else {
+      offset = -1;
+    }
+  }
+  return offset;
+}
+
+static gboolean
+gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
+{
+  GstFormat format;
+  GstSeekFlags flags;
+  GstSeekType start_type, stop_type;
+  gint64 start, stop;
+  gdouble rate;
+  guint64 offset = 0;
+  gboolean ret = FALSE;
+
+  gst_event_parse_seek (event, &rate, &format, &flags,
+      &start_type, &start, &stop_type, &stop);
+
+  if (!(flags & GST_SEEK_FLAG_FLUSH)) {
+    GST_WARNING_OBJECT (ts, "we only support flushing seeks");
+    goto beach;
+  }
+
+  offset = gst_flutsbase_get_bytes_offset(ts, format, start_type, start);
+  if (G_UNLIKELY (offset == (guint64) -1 || !gst_shifter_cache_has_offset (ts->cache, offset))) {
+    GST_WARNING_OBJECT (ts, "seek failed");
+    goto beach;
+  }
+
+  /* remember the rate */
+  ts->segment.rate = rate;
+  ts->segment.flags |= GST_SEGMENT_FLAG_RESET;
+
+  GST_DEBUG_OBJECT (ts, "seeking at offset %" G_GUINT64_FORMAT, offset);
+
+  /* now unblock the loop function */
+  FLOW_MUTEX_LOCK (ts);
+  /* Flush start downstream to make sure loop is idle */
+  gst_pad_push_event (ts->srcpad, gst_event_new_flush_start ());
+  ts->srcresult = GST_FLOW_FLUSHING;
+  /* unblock the loop function */
+  FLOW_SIGNAL_ADD (ts);
+  FLOW_MUTEX_UNLOCK (ts);
+
+  /* make sure it pauses, this should happen since we sent
+   * flush_start downstream. */
+  gst_pad_pause_task (ts->srcpad);
+  GST_DEBUG_OBJECT (ts, "loop stopped");
+  /* Flush stop downstream to ensure that all pushed cache slots come back
+   * to our control */
+  gst_pad_push_event (ts->srcpad, gst_event_new_flush_stop (TRUE));
+
+  /* Reconfigure the cache to handle the new offset */
+  FLOW_MUTEX_LOCK (ts);
+  gst_shifter_cache_seek (ts->cache, offset);
+
+  /* Restart the pushing loop */
+  ts->srcresult = GST_FLOW_OK;
+  ts->is_eos = FALSE;
+  ts->unexpected = FALSE;
+  ts->need_newsegment = TRUE;
+  gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
+      ts->srcpad, NULL);
+  FLOW_MUTEX_UNLOCK (ts);
+  GST_DEBUG_OBJECT (ts, "loop started");
+  ret = TRUE;
+beach:
+  return ret;
+}
+
 static inline gboolean
 gst_flutsbase_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
@@ -645,24 +624,32 @@ gst_flutsbase_query (GstElement * element, GstQuery * query)
     }
     case GST_QUERY_DURATION:
     {
-      GST_LOG_OBJECT (ts, "doing peer query");
+      GstFormat format;
 
-      GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
+      gst_query_parse_duration (query, &format, NULL);
 
-      if (bclass->query) {
-        ret = bclass->query (ts, query);
-      } else {
+      if (format == GST_FORMAT_BYTES) {
+        GST_LOG_OBJECT (ts, "replying duration query with %" G_GUINT64_FORMAT,
+            gst_shifter_cache_get_total_bytes_received(ts->cache));
+        gst_query_set_duration (query, GST_FORMAT_BYTES, 
+            gst_shifter_cache_get_total_bytes_received(ts->cache));
+        ret = TRUE;
+      }
+      else {
         ret = FALSE;
       }
       break;
     }
     case GST_QUERY_SEEKING:
     {
-      GstFluTSBaseClass *bclass = GST_FLUTSBASE_GET_CLASS (ts);
+      GstFormat fmt;
 
-      if (bclass->query) {
-        ret = bclass->query (ts, query);
-      } else {
+      gst_query_parse_seeking (query, &fmt, NULL, NULL, NULL);
+      if (fmt == GST_FORMAT_BYTES) {
+        gst_query_set_seeking (query, fmt, TRUE, 0, -1);
+        ret = TRUE;
+      }
+      else {
         ret = FALSE;
       }
       break;
@@ -879,19 +866,10 @@ gst_flutsbase_finalize (GObject * object)
 
   GST_DEBUG_OBJECT (ts, "finalizing tsbase");
 
-  if (ts->cache) {
-    gst_shifter_cache_unref (ts->cache);
-    ts->cache = NULL;
-  }
   g_mutex_free (ts->flow_lock);
   g_cond_free (ts->buffer_add);
 
   g_free (ts->allocator_name);
-
-  if (ts->index) {
-    gst_object_unref (ts->index);
-    ts->index = NULL;
-  }
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -969,10 +947,6 @@ gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass)
   ts->allocator_name = NULL;
 
   ts->cache_size = DEFAULT_CACHE_SIZE;
-
-  ts->index = NULL;
-  ts->index_id = 0;
-  ts->own_index = FALSE;
 
   GST_DEBUG_OBJECT (ts, "initialized time shift base");
 }

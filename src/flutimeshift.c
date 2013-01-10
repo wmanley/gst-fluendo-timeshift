@@ -24,6 +24,8 @@
 #include "flutsfake.h"
 #include "flutsmpeg.h"
 #include "flutsmpegbin.h"
+#include "gsttimeshiftseeker.h"
+#include "gsttimeshifttsindexer.h"
 
 GST_DEBUG_CATEGORY (ts_base);
 GST_DEBUG_CATEGORY (ts_flow);
@@ -59,6 +61,14 @@ plugin_init (GstPlugin * plugin)
 
   if (!gst_element_register (plugin, "flumpegshifterbin", GST_RANK_NONE,
           gst_flumpegshifter_bin_get_type ()))
+    return FALSE;
+
+  if (!gst_element_register (plugin, "timeshiftseeker", GST_RANK_NONE,
+          gst_time_shift_seeker_get_type ()))
+    return FALSE;
+
+  if (!gst_element_register (plugin, "timeshifttsindexer", GST_RANK_NONE,
+      gst_time_shift_ts_indexer_get_type ()))
     return FALSE;
 
   return TRUE;

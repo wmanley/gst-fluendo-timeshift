@@ -27,7 +27,18 @@
 #include "gst-compat.h"
 #include "flutsindex.h"
 
+static gboolean gst_flutsindex_get_writer_id (GstFluTSIndex * index,
+    GstObject * writer, gint * id);
+
 static void gst_flutsindex_finalize (GObject * object);
+static gint
+gst_flutsindex_get_id (GstFluTSIndex * index)
+{
+  if (index->id == -1) {
+    gst_flutsindex_get_writer_id(index, GST_OBJECT(index), &index->id);
+  }
+  return index->id;
+}
 
 GType
 gst_flutsindex_entry_get_type (void)
@@ -57,6 +68,7 @@ gst_flutsindex_init (GstFluTSIndex * index)
 {
   index->writers = g_hash_table_new (NULL, NULL);
   index->last_id = 0;
+  index->id = -1;
 
   GST_OBJECT_FLAG_SET (index, GST_FLUTSINDEX_WRITABLE);
   GST_OBJECT_FLAG_SET (index, GST_FLUTSINDEX_READABLE);
@@ -197,7 +209,7 @@ gst_flutsindex_add_id (GstFluTSIndex * index, gint id, gchar * description)
  *
  * Returns: TRUE if the writer would be mapped to an id.
  */
-gboolean
+static gboolean
 gst_flutsindex_get_writer_id (GstFluTSIndex * index, GstObject * writer,
     gint * id)
 {
@@ -259,11 +271,12 @@ gst_flutsindex_get_writer_id (GstFluTSIndex * index, GstObject * writer,
  * Returns: a pointer to the newly added entry in the index.
  */
 GstFluTSIndexEntry *
-gst_flutsindex_add_associationv (GstFluTSIndex * index, gint id,
+gst_flutsindex_add_associationv (GstFluTSIndex * index,
     GstFluTSIndexAssociationFlags flags, gint n,
     const GstFluTSIndexAssociation * list)
 {
   GstFluTSIndexEntry *entry;
+  gint id = gst_flutsindex_get_id (index);
 
   g_return_val_if_fail (n > 0, NULL);
   g_return_val_if_fail (list != NULL, NULL);
@@ -312,16 +325,13 @@ gst_flutsindex_compare_func (gconstpointer a, gconstpointer b,
  *   value was not found.
  */
 GstFluTSIndexEntry *
-gst_flutsindex_get_assoc_entry (GstFluTSIndex * index, gint id,
+gst_flutsindex_get_assoc_entry (GstFluTSIndex * index,
     GstFluTSIndexLookupMethod method, GstFluTSIndexAssociationFlags flags,
     GstFormat format, gint64 value)
 {
   g_return_val_if_fail (GST_IS_FLUTSINDEX (index), NULL);
 
-  if (id == -1)
-    return NULL;
-
-  return gst_flutsindex_get_assoc_entry_full (index, id, method, flags, format,
+  return gst_flutsindex_get_assoc_entry_full (index, method, flags, format,
       value, gst_flutsindex_compare_func, NULL);
 }
 
@@ -343,11 +353,12 @@ gst_flutsindex_get_assoc_entry (GstFluTSIndex * index, gint id,
  *   value was not found.
  */
 GstFluTSIndexEntry *
-gst_flutsindex_get_assoc_entry_full (GstFluTSIndex * index, gint id,
+gst_flutsindex_get_assoc_entry_full (GstFluTSIndex * index,
     GstFluTSIndexLookupMethod method, GstFluTSIndexAssociationFlags flags,
     GstFormat format, gint64 value, GCompareDataFunc func, gpointer user_data)
 {
   GstFluTSIndexClass *iclass;
+  gint id = gst_flutsindex_get_id (index);
 
   g_return_val_if_fail (GST_IS_FLUTSINDEX (index), NULL);
 

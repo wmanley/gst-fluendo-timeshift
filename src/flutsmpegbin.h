@@ -46,7 +46,9 @@ struct _GstFluMPEGShifterBin
   GstBin parent_instance;
 
   GstElement * parser;
+  GstElement * indexer;
   GstElement * timeshifter;
+  GstElement * seeker;
 };
 
 struct _GstFluMPEGShifterBinClass
