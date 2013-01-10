@@ -39,8 +39,6 @@
 GST_DEBUG_CATEGORY_STATIC (gst_time_shift_ts_indexer_debug_category);
 #define GST_CAT_DEFAULT gst_time_shift_ts_indexer_debug_category
 
-#define DEFAULT_DELTA           500
-
 #define TS_PACKET_SYNC_CODE     0x47
 #define TS_MIN_PACKET_SIZE      188
 #define TS_MAX_PACKET_SIZE      208
@@ -68,19 +66,14 @@ static gboolean gst_time_shift_ts_indexer_start (GstBaseTransform * trans);
 static gboolean gst_time_shift_ts_indexer_stop (GstBaseTransform * trans);
 static GstFlowReturn
 gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * buf);
-static void gst_time_shift_ts_indexer_replace_index(GstTimeShiftTsIndexer * base,
-    GstIndex * new_index, gboolean own);
-static void
-gst_time_shift_ts_indexer_collect_time (GstTimeShiftTsIndexer * base,
-    guint8 * data, gsize size);
-
+static inline guint64
+gst_time_shift_ts_indexer_get_pcr (GstTimeShiftTsIndexer * ts, guint8 * data,
+    gsize size);
 
 enum
 {
   PROP_0,
-  PROP_INDEX,
   PROP_PCR_PID,
-  PROP_DELTA
 };
 
 /* pad templates */
@@ -136,21 +129,10 @@ gst_time_shift_ts_indexer_class_init (GstTimeShiftTsIndexerClass * klass)
   base_transform_class->stop = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_stop);
   base_transform_class->transform_ip = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_transform_ip);
 
-  g_object_class_install_property (gobject_class, PROP_INDEX,
-      g_param_spec_object ("index", "Index",
-          "The index into which to write indexing information",
-          GST_TYPE_INDEX, (G_PARAM_READABLE | G_PARAM_WRITABLE)));
   g_object_class_install_property (gobject_class, PROP_PCR_PID,
       g_param_spec_int ("pcr-pid", "PCR pid",
           "Defines the PCR pid to collect the time (-1 = undefined)",
           INVALID_PID, 0x1fff, INVALID_PID,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_class, PROP_DELTA,
-      g_param_spec_int ("delta", "Delta",
-          "Delta time between index entries in miliseconds "
-          "(-1 = use random access flag)",
-          -1, 10000, DEFAULT_DELTA,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 }
 
@@ -161,27 +143,7 @@ gst_time_shift_ts_indexer_init (GstTimeShiftTsIndexer * indexer)
   gst_base_transform_set_passthrough(base, TRUE);
 
   indexer->pcr_pid = INVALID_PID;
-  indexer->delta = DEFAULT_DELTA;
-
   indexer->base_time = GST_CLOCK_TIME_NONE;
-  indexer->last_pcr = 0;
-  indexer->last_time = GST_CLOCK_TIME_NONE;
-  indexer->current_offset = 0;
-}
-
-static void
-gst_time_shift_ts_indexer_replace_index(GstTimeShiftTsIndexer * base,
-    GstIndex * new_index, gboolean own)
-{
-  if (base->index) {
-    gst_object_unref (base->index);
-    base->index = NULL;
-  }
-  if (new_index) {
-    gst_object_ref (new_index);
-    base->index = new_index;
-    base->own_index = own;
-  }
 }
 
 void
@@ -191,20 +153,10 @@ gst_time_shift_ts_indexer_set_property (GObject * object, guint property_id,
   GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (object);
 
   switch (property_id) {
-    case PROP_INDEX:
-      gst_time_shift_ts_indexer_replace_index(indexer,
-          g_value_dup_object(value), FALSE);
-      break;
     case PROP_PCR_PID:
       indexer->pcr_pid = g_value_get_int (value);
       GST_INFO_OBJECT (indexer, "configured pcr-pid: %d(%x)",
           indexer->pcr_pid, indexer->pcr_pid);
-      break;
-    case PROP_DELTA:
-      indexer->delta = g_value_get_int (value);
-      if (indexer->delta != -1) {
-        indexer->delta *= GST_MSECOND;
-      }
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -219,18 +171,8 @@ gst_time_shift_ts_indexer_get_property (GObject * object, guint property_id,
   GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (object);
 
   switch (property_id) {
-    case PROP_INDEX:
-      g_value_set_object(value, indexer->index);
-      break;
     case PROP_PCR_PID:
       g_value_set_int (value, indexer->pcr_pid);
-      break;
-    case PROP_DELTA:
-      if (indexer->delta != -1) {
-        g_value_set_int (value, indexer->delta / GST_MSECOND);
-      } else {
-        g_value_set_int (value, -1);
-      }
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -241,10 +183,7 @@ gst_time_shift_ts_indexer_get_property (GObject * object, guint property_id,
 void
 gst_time_shift_ts_indexer_dispose (GObject * object)
 {
-  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (object);
-
-  /* clean up as possible.  may be called multiple times */
-  gst_time_shift_ts_indexer_replace_index(indexer, NULL, FALSE);
+  /* GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (object); */
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
@@ -254,27 +193,13 @@ gst_time_shift_ts_indexer_finalize (GObject * object)
 {
   /* GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (object); */
 
-  /* clean up object here */
-
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
 
 static gboolean
 gst_time_shift_ts_indexer_start (GstBaseTransform * trans)
 {
-  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (trans);
-
-  /* If this is our own index destroy it as the old entries might be wrong */
-  if (indexer->own_index) {
-    gst_time_shift_ts_indexer_replace_index(indexer, NULL, FALSE);
-  }
-
-  /* If no index was created, generate one */
-  if (G_UNLIKELY (!indexer->index)) {
-    GST_DEBUG_OBJECT (indexer, "no index provided creating our own");
-    gst_time_shift_ts_indexer_replace_index(indexer,
-        gst_index_factory_make ("memindex"), FALSE);
-  }
+/*  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (trans); */
 
   return TRUE;
 }
@@ -293,6 +218,7 @@ gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * bu
 
   GstFlowReturn ret = GST_FLOW_OK;
   GstMapInfo map;
+  guint64 pcr;
 
   /* collect time info from that buffer */
   if (!gst_buffer_map (buf, &map, GST_MAP_READ)) {
@@ -300,7 +226,13 @@ gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * bu
     goto out;
   }
 
-  gst_time_shift_ts_indexer_collect_time (indexer, map.data, map.size);
+  pcr = gst_time_shift_ts_indexer_get_pcr (indexer, map.data, map.size);
+  if (!GST_CLOCK_TIME_IS_VALID (indexer->base_time)) {
+    /* First time we receive is time zero */
+    indexer->base_time = MPEGTIME_TO_GSTTIME (pcr);
+  }
+
+  GST_BUFFER_PTS(buf) = MPEGTIME_TO_GSTTIME (pcr) - indexer->base_time;
 out:
   return ret;
 }
@@ -317,22 +249,6 @@ is_next_sync_valid (const guint8 * in_data, guint size, guint offset)
     }
   }
   return FALSE;
-}
-
-static inline void
-add_index_entry (GstTimeShiftTsIndexer * base, GstClockTime time, guint64 offset)
-{
-  GstIndexAssociation associations[2];
-
-  GST_LOG_OBJECT (base, "adding association %" GST_TIME_FORMAT "-> %"
-      G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
-  associations[0].format = GST_FORMAT_TIME;
-  associations[0].value = time;
-  associations[1].format = GST_FORMAT_BYTES;
-  associations[1].value = offset;
-
-  gst_index_add_associationv (base->index, GST_ASSOCIATION_FLAG_NONE, 2,
-      (const GstIndexAssociation *) &associations);
 }
 
 static inline guint64
@@ -354,7 +270,7 @@ gst_time_shift_ts_indexer_parse_pcr (GstTimeShiftTsIndexer * ts, guint8 * data)
         /* Check Adaptation field size */
         if (data[4]) {
           /* Check if random access flag is present */
-          if (ts->delta == -1 && GST_CLOCK_TIME_IS_VALID (ts->base_time) &&
+          if (GST_CLOCK_TIME_IS_VALID (ts->base_time) &&
               !(data[5] & 0x40)) {
             /* random access flag not set just skip after first PCR */
             goto beach;
@@ -379,13 +295,11 @@ beach:
 }
 
 static inline guint64
-gst_time_shift_ts_indexer_get_pcr (GstTimeShiftTsIndexer * ts, guint8 ** in_data,
-    gsize * in_size, guint64 * offset)
+gst_time_shift_ts_indexer_get_pcr (GstTimeShiftTsIndexer * ts, guint8 * data,
+    gsize size)
 {
   guint64 pcr = (guint64) -1;
   gint i = 0;
-  guint8 *data = *in_data;
-  gsize size = *in_size;
 
   /* mpegtsparse pushes PES packet buffers so this case must be handled
    * without checking for next SYNC code */
@@ -402,9 +316,6 @@ gst_time_shift_ts_indexer_get_pcr (GstTimeShiftTsIndexer * ts, guint8 ** in_data
             /* Skip to start of next TSPacket (pre-subract for the i++ later) */
             i += (TS_MIN_PACKET_SIZE - 1);
           } else {
-            *in_data += i;
-            *in_size -= i;
-            *offset += i;
             break;
           }
         }
@@ -413,65 +324,5 @@ gst_time_shift_ts_indexer_get_pcr (GstTimeShiftTsIndexer * ts, guint8 ** in_data
     }
   }
   return pcr;
-}
-
-static void
-gst_time_shift_ts_indexer_collect_time (GstTimeShiftTsIndexer * base, guint8 * data, gsize size)
-{
-
-  GstTimeShiftTsIndexer *ts = GST_TIME_SHIFT_TS_INDEXER (base);
-  GstClockTime time;
-  gsize remaining = size;
-  guint64 pcr, offset;
-
-  /* We can read PCR data only if we know which PCR pid to track */
-  if (G_UNLIKELY (ts->pcr_pid == INVALID_PID)) {
-    goto beach;
-  }
-
-  offset = ts->current_offset;
-  while (remaining >= TS_MIN_PACKET_SIZE) {
-    pcr = gst_time_shift_ts_indexer_get_pcr (ts, &data, &remaining, &offset);
-    if (pcr != (guint64) -1) {
-      /* FIXME: handle wraparounds */
-      if (!GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
-        /* First time we receive is time zero */
-        ts->base_time = MPEGTIME_TO_GSTTIME (pcr);
-      }
-      time = MPEGTIME_TO_GSTTIME (pcr) - ts->base_time;
-
-      GST_LOG_OBJECT (ts, "found PCR %" G_GUINT64_FORMAT
-          "(%" GST_TIME_FORMAT ") at offset %" G_GUINT64_FORMAT
-          " and last pcr was %" G_GUINT64_FORMAT "(%" GST_TIME_FORMAT
-          ")", pcr, GST_TIME_ARGS (time), offset, ts->last_pcr,
-          GST_TIME_ARGS (MPEGTIME_TO_GSTTIME (ts->last_pcr)));
-      ts->last_pcr = pcr;
-
-      if (!GST_CLOCK_TIME_IS_VALID (ts->last_time)) {
-        add_index_entry (base, time, offset);
-        ts->last_time = time;
-        goto beach;
-      } else if (ts->delta == -1) {
-        add_index_entry (base, time, offset);
-        ts->last_time = time;
-        goto beach;
-      } else if (ts->delta != -1 &&
-          GST_CLOCK_DIFF (ts->last_time, time) >= ts->delta) {
-        add_index_entry (base, time, offset);
-        ts->last_time = time;
-        goto beach;
-      }
-      if (remaining) {
-        remaining--;
-        data++;
-        offset++;
-      }
-    } else {
-      goto beach;
-    }
-  }
-
-beach:
-  ts->current_offset += size;
 }
 

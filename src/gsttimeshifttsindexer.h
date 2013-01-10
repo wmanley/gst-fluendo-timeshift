@@ -22,7 +22,6 @@
 #define _GST_TIME_SHIFT_TS_INDEXER_H_
 
 #include <gst/base/gstbasetransform.h>
-#include "flutsindex.h"
 
 G_BEGIN_DECLS
 
@@ -39,19 +38,11 @@ struct _GstTimeShiftTsIndexer
 {
   GstBaseTransform base_timeshifttsindexer;
 
-  /* Generated Index */
-  GstIndex *index;
-  gboolean own_index;
-
   /* Properties */
   gint16 pcr_pid;
-  GstClockTimeDiff delta;
 
   /* PCR tracking */
-  guint64 last_pcr;
-  guint64 current_offset;
   GstClockTime base_time;
-  GstClockTime last_time;
 };
 
 struct _GstTimeShiftTsIndexerClass

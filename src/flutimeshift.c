@@ -21,10 +21,6 @@
 #include "config.h"
 #endif
 
-#include "flutsfake.h"
-#include "flutsmpeg.h"
-#include "flutsmpegbin.h"
-#include "gsttimeshiftseeker.h"
 #include "gsttimeshifttsindexer.h"
 
 GST_DEBUG_CATEGORY (ts_base);
@@ -36,37 +32,6 @@ GST_DEBUG_CATEGORY (ts_mpeg_bin);
 static gboolean
 plugin_init (GstPlugin * plugin)
 {
-  GST_DEBUG_CATEGORY_INIT (ts_base, "flubaseshifter", 0,
-      "Fluendo Time Shift element");
-
-  GST_DEBUG_CATEGORY_INIT (ts_flow, "flushifter_flow", 0,
-      "dataflow in the Time Shift element");
-
-  GST_DEBUG_CATEGORY_INIT (ts_fake, "flufakeshifter", 0,
-      "Fluendo Fake Time Shifting");
-
-  GST_DEBUG_CATEGORY_INIT (ts_mpeg, "flumpegshifter", 0,
-      "Fluendo MPEG Time Shifting");
-
-  GST_DEBUG_CATEGORY_INIT (ts_mpeg_bin, "flumpegshifterbin", 0,
-      "Fluendo MPEG Time Shifting bin");
-
-  if (!gst_element_register (plugin, "flufakeshifter", GST_RANK_NONE,
-          gst_flufakeshifter_get_type ()))
-    return FALSE;
-
-  if (!gst_element_register (plugin, "flumpegshifter", GST_RANK_NONE,
-          gst_flumpegshifter_get_type ()))
-    return FALSE;
-
-  if (!gst_element_register (plugin, "flumpegshifterbin", GST_RANK_NONE,
-          gst_flumpegshifter_bin_get_type ()))
-    return FALSE;
-
-  if (!gst_element_register (plugin, "timeshiftseeker", GST_RANK_NONE,
-          gst_time_shift_seeker_get_type ()))
-    return FALSE;
-
   if (!gst_element_register (plugin, "timeshifttsindexer", GST_RANK_NONE,
       gst_time_shift_ts_indexer_get_type ()))
     return FALSE;
