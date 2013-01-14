@@ -5,7 +5,6 @@ libgstflutimeshift_la_SOURCES = \
   flutimeshift.c \
   flutsbase.c \
   flucache.c \
-  flutsfake.c \
   flutsmpeg.c \
   flutsmpegbin.c \
   flutsindex.c \
@@ -33,7 +32,6 @@ libgstflutimeshift_la_LIBADD = \
 noinst_HEADERS = \
   flutsbase.h \
   flucache.h \
-  flutsfake.h \
   flutsmpeg.h \
   flutsmpegbin.h \
   flutsindex.h \
