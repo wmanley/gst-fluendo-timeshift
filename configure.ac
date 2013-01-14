@@ -7,7 +7,7 @@ dnl fill in your package name and version here
 dnl the fourth (nano) number should be 0 for a release, 1 for CVS,
 dnl and 2... for a prerelease
 dnl releases only do -Wall, cvs and prerelease does -Werror too
-AC_INIT(GStreamer Fluendo Time Shift element, 0.10.1.2,,
+AC_INIT(GStreamer Fluendo Time Shift element, 1.0.0,,
     gst-fluendo-timeshift)
 
 AG_GST_INIT
@@ -74,7 +74,7 @@ fi
 dnl Now we're ready to ask for gstreamer libs and cflags
 dnl And we can also ask for the right version of gstreamer
 
-AG_GST_DETECT_VERSION([1.0.0], [0.10.3])
+AG_GST_DETECT_VERSION([1.0.0])
 AG_GST_CHECK_GST($GST_MAJORMINOR, [$GST_REQ])
 AG_GST_CHECK_GST_BASE($GST_MAJORMINOR, [$GST_REQ])
 AG_GST_CHECK_GST_PLUGINS_BASE($GST_MAJORMINOR, [$GST_REQ])
