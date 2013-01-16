@@ -1,6 +1,4 @@
 %define majorminor   @GST_MAJORMINOR@
-%define gst_minver   1.0.0
-%define gstpb_minver 1.0.0
 
 %{!?gstreamer:  %define         gstreamer       gstreamer}
 

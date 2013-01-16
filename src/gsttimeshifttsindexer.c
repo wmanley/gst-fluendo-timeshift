@@ -301,6 +301,9 @@ gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * bu
   }
 
   gst_time_shift_ts_indexer_collect_time (indexer, map.data, map.size);
+
+  gst_buffer_unmap (buf, &map);
+
 out:
   return ret;
 }
