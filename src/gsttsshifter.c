@@ -639,6 +639,23 @@ gst_ts_shifter_query (GstElement * element, GstQuery * query)
       break;
     }
 
+    case GST_QUERY_BUFFERING:
+    {
+      GstFormat format;
+      guint64 bytes_begin, bytes_end;
+
+      gst_query_parse_buffering_range (query, &format, NULL, NULL, NULL);
+      if (format != GST_FORMAT_BYTES) {
+        ret = FALSE;
+        break;
+      }
+
+      gst_ts_cache_buffered_range (ts->cache, &bytes_begin, &bytes_end);
+      gst_query_set_buffering_range (query, format, bytes_begin, bytes_end, -1);
+
+      ret = TRUE;
+      break;
+    }
     default:
       ret = FALSE;
       break;

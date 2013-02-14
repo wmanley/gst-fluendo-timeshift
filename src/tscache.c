@@ -656,3 +656,19 @@ gst_ts_cache_fullness (GstTSCache * cache)
         + head->size);
   }
 }
+
+void
+gst_ts_cache_buffered_range (GstTSCache * cache, guint64 * begin, guint64 * end)
+{
+  g_return_if_fail (cache != NULL);
+
+  GST_CACHE_LOCK (cache);
+  if (end) {
+    *end = cache->h_offset;
+  }
+
+  if (begin) {
+    *begin = cache->l_rb_offset;
+  }
+  GST_CACHE_UNLOCK (cache);
+}

@@ -216,7 +216,8 @@ gst_ts_seeker_stop (GstBaseTransform * trans)
 }
 
 static GstClockTime
-gst_ts_seeker_bytes_to_stream_time (GstTSSeeker * ts, guint64 buffer_offset)
+gst_ts_seeker_bytes_to_stream_time (GstTSSeeker * ts, guint64 buffer_offset,
+    gboolean accurate)
 {
   GstIndexEntry *entry = NULL;
   GstClockTime ret;
@@ -235,20 +236,29 @@ gst_ts_seeker_bytes_to_stream_time (GstTSSeeker * ts, guint64 buffer_offset)
 
     GST_DEBUG_OBJECT (ts, "found index entry at %" GST_TIME_FORMAT " pos %"
         G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
-    if (buffer_offset == offset) {
+    if (accurate && buffer_offset != offset) {
       GST_ELEMENT_WARNING (ts, RESOURCE, FAILED,
           ("Bytes->time conversion inaccurate"),
           ("Lookup of byte offset not accurate: Returned byte offset %lld doesn't match requested offset %lld.  Time: %lld",
               offset, buffer_offset, time));
+    } else {
+      GST_DEBUG_OBJECT (ts, "found index entry at %" GST_TIME_FORMAT " pos %"
+          G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
     }
     ret = (GstClockTime) time;
   } else if (buffer_offset == 0) {
     ret = 0;
   } else {
-    GST_ELEMENT_WARNING (ts, RESOURCE, FAILED,
-        ("Bytes->time conversion failed"),
-        ("Lookup of byte offset %i failed: No index entry for that byte offset",
-            buffer_offset));
+    if (accurate) {
+      GST_ELEMENT_WARNING (ts, RESOURCE, FAILED,
+          ("Bytes->time conversion failed"),
+          ("Lookup of byte offset %i failed: No index entry for that byte offset",
+              buffer_offset));
+    } else {
+      GST_DEBUG_OBJECT (ts, "no entry for position %lli in %p", buffer_offset,
+          ts->index);
+    }
+
     ret = GST_CLOCK_TIME_NONE;
   }
   return ret;
@@ -279,9 +289,11 @@ gst_ts_seeker_transform_segment_event (GstTSSeeker * seeker, GstEvent ** event)
 
   segment.format = GST_FORMAT_TIME;
   segment.base = 0;
-  segment.start = gst_ts_seeker_bytes_to_stream_time (seeker, segment.start);
+  segment.start =
+      gst_ts_seeker_bytes_to_stream_time (seeker, segment.start, TRUE);
   if (segment.stop != -1) {
-    segment.stop = gst_ts_seeker_bytes_to_stream_time (seeker, segment.stop);
+    segment.stop =
+        gst_ts_seeker_bytes_to_stream_time (seeker, segment.stop, TRUE);
   }
   segment.time = segment.start;
 
@@ -326,31 +338,9 @@ gst_ts_seeker_get_duration_bytes (GstTSSeeker * seeker)
 static GstClockTime
 gst_ts_seeker_get_last_time (GstTSSeeker * base)
 {
-  if (!base->index) {
-    GST_DEBUG_OBJECT (base, "no index");
-    return GST_CLOCK_TIME_NONE;
-  } else {
-    gint64 time;
-    gint64 offset;
-    GstIndexEntry *entry = NULL;
-    guint64 len = gst_ts_seeker_get_duration_bytes (base);
+  guint64 len = gst_ts_seeker_get_duration_bytes (base);
 
-    entry = gst_index_get_assoc_entry (base->index, GST_INDEX_LOOKUP_BEFORE,
-        GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES, len - 1000000);
-
-    if (entry) {
-      gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
-      gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &time);
-
-      GST_DEBUG_OBJECT (base, "found index entry at %" GST_TIME_FORMAT " pos %"
-          G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
-      return time;
-    } else {
-      GST_DEBUG_OBJECT (base, "no entry for position %lli in %p", len,
-          base->index);
-      return GST_CLOCK_TIME_NONE;
-    }
-  }
+  return gst_ts_seeker_bytes_to_stream_time (base, len - 1000000, FALSE);
 }
 
 static guint64
@@ -484,6 +474,7 @@ gst_ts_seeker_query (GstBaseTransform * base, GstPadDirection direction,
       }
       break;
     }
+
     case GST_QUERY_SEEKING:
     {
       GstFormat fmt;
@@ -495,9 +486,42 @@ gst_ts_seeker_query (GstBaseTransform * base, GstPadDirection direction,
       }
       break;
     }
+
+    case GST_QUERY_BUFFERING:
+    {
+      GstFormat format;
+      GstQuery *buf_query;
+      gboolean ret = FALSE;
+
+      gst_query_parse_buffering_range (query, &format, NULL, NULL, NULL);
+      if (format != GST_FORMAT_TIME) {
+        break;
+      }
+
+      buf_query = gst_query_new_buffering (GST_FORMAT_BYTES);
+      if (GST_BASE_TRANSFORM_CLASS (parent_class)->query (base, direction,
+              buf_query)) {
+        gint64 start, stop;
+        GstClockTime start_time, stop_time;
+
+        gst_query_parse_buffering_range (buf_query, NULL, &start, &stop, NULL);
+
+        start_time = gst_ts_seeker_bytes_to_stream_time (ts, start, FALSE);
+        stop_time = gst_ts_seeker_bytes_to_stream_time (ts, stop, FALSE);
+        gst_query_set_buffering_range (query, format, start_time, stop_time,
+            -1);
+
+        ret = TRUE;
+      }
+
+      gst_object_unref (buf_query);
+      return ret;
+    }
+
     default:
       break;
   }
+
   return GST_BASE_TRANSFORM_CLASS (parent_class)->query (base, direction,
       query);
 }
@@ -509,7 +533,8 @@ gst_ts_seeker_transform_ip (GstBaseTransform * base, GstBuffer * buf)
   g_assert (gst_buffer_is_writable (buf));
   if (seeker->timestamp_next_buffer) {
     GST_BUFFER_TIMESTAMP (buf) =
-        gst_ts_seeker_bytes_to_stream_time (seeker, GST_BUFFER_OFFSET (buf));
+        gst_ts_seeker_bytes_to_stream_time (seeker, GST_BUFFER_OFFSET (buf),
+        TRUE);
     seeker->timestamp_next_buffer = FALSE;
   }
   return GST_FLOW_OK;

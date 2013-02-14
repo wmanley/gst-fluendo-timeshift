@@ -50,5 +50,6 @@ gboolean gst_ts_cache_seek (GstTSCache * cache, guint64 offset);
 gboolean gst_ts_cache_is_empty (GstTSCache * cache);
 guint64 gst_ts_cache_fullness (GstTSCache * cache);
 
+void gst_ts_cache_buffered_range (GstTSCache * cache, guint64 * begin, guint64 * end);
 G_END_DECLS
 #endif /* __TS_CACHE_H__ */

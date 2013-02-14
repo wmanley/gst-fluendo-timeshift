@@ -81,6 +81,13 @@ class Player(object):
 
         hbox.pack_start(self.stop_button, False, False, 0)
 
+        self.pause_button = Gtk.Button(label='Pause')
+        def pause_button_press_cb(widget, event):
+            self.pause()
+        self.pause_button.connect('button-press-event', pause_button_press_cb)
+
+        hbox.pack_start(self.pause_button, False, False, 0)
+
         self.adjustment = Gtk.Adjustment(0.0, 0.00, 100.0, 0.1, 1.0, 1.0)
         self.scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=self.adjustment)
         self.scale.set_digits(0)
@@ -93,6 +100,21 @@ class Player(object):
         hbox.pack_start(self.scale, False, True, 0)
 
         box.pack_start(hbox, False, False, 0)
+
+        hbox2 = Gtk.Box()
+        hbox2.set_spacing(5)
+        hbox2.set_orientation(Gtk.Orientation.HORIZONTAL)
+
+        self.label_duration = Gtk.Label('duration: --:--')
+        hbox2.pack_start(self.label_duration, False, False, 0)
+
+        self.label_buf_begin = Gtk.Label('buffer begin: --:--')
+        hbox2.pack_start(self.label_buf_begin, False, False, 0)
+
+        self.label_buf_end = Gtk.Label('buffer end: --:--')
+        hbox2.pack_start(self.label_buf_end, False, False, 0)
+
+        box.pack_start(hbox2, False, False, 0)
 
         # Create GStreamer pipeline
         self.pipeline = Gst.Pipeline()
@@ -124,10 +146,18 @@ class Player(object):
     
     def update_scale_cb(self):
         self.position, self.duration = self.query_position()
-        print "pos: %i, dur: %i" % (self.position, self.duration)
+        self.label_duration.set_text('duration: %s' % self.format_time(self.duration))
         if Gst.CLOCK_TIME_NONE != self.position and 0 != self.duration:
             value = self.position * 100.0 / self.duration
             self.adjustment.set_value(value)
+
+        buffering = Gst.Query.new_buffering(Gst.Format.TIME)
+        if self.pipeline.query(buffering):
+            dummy1, buf_start, buf_end, dummy2 = buffering.parse_buffering_range()
+            self.label_buf_begin.set_text('buffer begin: %s' % self.format_time(buf_start))
+            self.label_buf_end.set_text('buffer end: %s' % self.format_time(buf_end))
+        else:
+            print "Buffering query failed"
 
         return True
     
@@ -144,15 +174,17 @@ class Player(object):
 
         return (position, duration)
 
+    def format_time(self, value):
+        seconds = value / Gst.SECOND
+        return '%02d:%02d' % (seconds / 60, seconds % 60)
+        
     def scale_format_value_cb(self, scale, value):
         if Gst.CLOCK_TIME_NONE == self.duration:
             real = 0
         else:
             real = value * self.duration / 100
 
-        seconds = real / Gst.SECOND
-
-        return '%02d:%02d' % (seconds / 60, seconds % 60)
+        return self.format_time(real)
 
     def run(self):
         self.window.show_all()
@@ -197,6 +229,16 @@ class Player(object):
         #    print 'setting new stream time to 0'
         #else:
         #    print 'seek to end failed'
+
+    def pause(self):
+        if self.pause_button.get_label() == 'Pause':
+            self.pause_button.set_label('Play')
+            state = Gst.State.PAUSED;
+        else:
+            self.pause_button.set_label('Pause')
+            state = Gst.State.PLAYING
+
+        self.pipeline.set_state(state)
 
     def scale_button_press_cb(self, widget, event):
         #print 'starting seek'
