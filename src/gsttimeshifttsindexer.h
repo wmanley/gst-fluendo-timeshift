@@ -43,6 +43,7 @@ struct _GstTimeShiftTsIndexer
 
   /* PCR tracking */
   GstClockTime base_time;
+  GstClockTime last_time;
 };
 
 struct _GstTimeShiftTsIndexerClass

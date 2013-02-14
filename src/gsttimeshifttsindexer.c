@@ -31,6 +31,8 @@
 #include "config.h"
 #endif
 
+#include <stdio.h>
+
 #include <gst/gst.h>
 #include <gst/gstelement.h>
 #include <gst/base/gstbasetransform.h>
@@ -199,7 +201,10 @@ gst_time_shift_ts_indexer_finalize (GObject * object)
 static gboolean
 gst_time_shift_ts_indexer_start (GstBaseTransform * trans)
 {
-/*  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (trans); */
+  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (trans);
+
+  indexer->last_time = GST_CLOCK_TIME_NONE;
+  indexer->base_time = GST_CLOCK_TIME_NONE;
 
   return TRUE;
 }
@@ -227,12 +232,22 @@ gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * bu
   }
 
   pcr = gst_time_shift_ts_indexer_get_pcr (indexer, map.data, map.size);
-  if (!GST_CLOCK_TIME_IS_VALID (indexer->base_time)) {
-    /* First time we receive is time zero */
-    indexer->base_time = MPEGTIME_TO_GSTTIME (pcr);
+  if (pcr != -1) {
+    if (!GST_CLOCK_TIME_IS_VALID (indexer->base_time)) {
+      /* First time we receive is time zero */
+      indexer->base_time = MPEGTIME_TO_GSTTIME (pcr);
+    }
+    GST_BUFFER_PTS(buf) = MPEGTIME_TO_GSTTIME (pcr) - indexer->base_time;
+    fprintf(stderr, "Found PCR: %lli diff %lli\n", (long long int) MPEGTIME_TO_GSTTIME (pcr), (long long int) GST_BUFFER_PTS(buf) - indexer->last_time);
+    indexer->last_time = GST_BUFFER_PTS(buf) - indexer->base_time;
   }
-
-  GST_BUFFER_PTS(buf) = MPEGTIME_TO_GSTTIME (pcr) - indexer->base_time;
+  else if (indexer->last_time != GST_CLOCK_TIME_NONE) {
+    GST_BUFFER_PTS(buf) = indexer->last_time;
+  }
+  else {
+    GST_BUFFER_PTS(buf) = GST_CLOCK_TIME_NONE;
+  }
+  gst_buffer_unmap(buf, &map);
 out:
   return ret;
 }
@@ -269,12 +284,6 @@ gst_time_shift_ts_indexer_parse_pcr (GstTimeShiftTsIndexer * ts, guint8 * data)
       if (pid == (guint16) ts->pcr_pid) {
         /* Check Adaptation field size */
         if (data[4]) {
-          /* Check if random access flag is present */
-          if (GST_CLOCK_TIME_IS_VALID (ts->base_time) &&
-              !(data[5] & 0x40)) {
-            /* random access flag not set just skip after first PCR */
-            goto beach;
-          }
           /* Check if PCR is present */
           if (data[5] & 0x10) {
             pcr1 = GST_READ_UINT32_BE (data + 6);
@@ -290,7 +299,6 @@ gst_time_shift_ts_indexer_parse_pcr (GstTimeShiftTsIndexer * ts, guint8 * data)
     }
   }
 
-beach:
   return pcr;
 }
 
