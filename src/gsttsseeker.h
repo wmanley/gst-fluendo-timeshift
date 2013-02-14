@@ -1,4 +1,4 @@
-/* GStreamer
+/* GStreamer MPEG TS Time Shifting
  * Copyright (C) 2013 YouView TV Ltd. <william.manley@youview.com>
  *
  * This library is free software; you can redistribute it and/or
@@ -17,24 +17,22 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifndef _GST_TIME_SHIFT_SEEKER_H_
-#define _GST_TIME_SHIFT_SEEKER_H_
+#ifndef _GST_TS_SEEKER_H_
+#define _GST_TS_SEEKER_H_
 
 #include <gst/base/gstbasetransform.h>
-#include "flutsindex.h"
+#include "tsindex.h"
 
 G_BEGIN_DECLS
+#define GST_TYPE_TS_SEEKER   (gst_ts_seeker_get_type())
+#define GST_TS_SEEKER(obj)   (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_TS_SEEKER,GstTSSeeker))
+#define GST_TS_SEEKER_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_TS_SEEKER,GstTSSeekerClass))
+#define GST_IS_TS_SEEKER(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_TS_SEEKER))
+#define GST_IS_TS_SEEKER_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_TS_SEEKER))
+typedef struct _GstTSSeeker GstTSSeeker;
+typedef struct _GstTSSeekerClass GstTSSeekerClass;
 
-#define GST_TYPE_TIME_SHIFT_SEEKER   (gst_time_shift_seeker_get_type())
-#define GST_TIME_SHIFT_SEEKER(obj)   (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_TIME_SHIFT_SEEKER,GstTimeShiftSeeker))
-#define GST_TIME_SHIFT_SEEKER_CLASS(klass)   (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_TIME_SHIFT_SEEKER,GstTimeShiftSeekerClass))
-#define GST_IS_TIME_SHIFT_SEEKER(obj)   (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_TIME_SHIFT_SEEKER))
-#define GST_IS_TIME_SHIFT_SEEKER_CLASS(obj)   (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_TIME_SHIFT_SEEKER))
-
-typedef struct _GstTimeShiftSeeker GstTimeShiftSeeker;
-typedef struct _GstTimeShiftSeekerClass GstTimeShiftSeekerClass;
-
-struct _GstTimeShiftSeeker
+struct _GstTSSeeker
 {
   GstBaseTransform base_timeshiftseeker;
 
@@ -44,13 +42,12 @@ struct _GstTimeShiftSeeker
   gboolean timestamp_next_buffer;
 };
 
-struct _GstTimeShiftSeekerClass
+struct _GstTSSeekerClass
 {
   GstBaseTransformClass base_timeshiftseeker_class;
 };
 
-GType gst_time_shift_seeker_get_type (void);
+GType gst_ts_seeker_get_type (void);
 
 G_END_DECLS
-
 #endif

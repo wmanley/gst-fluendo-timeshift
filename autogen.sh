@@ -3,7 +3,7 @@
 
 DIE=0
 package=gst-fluendo-timeshift
-srcfile=src/flutimeshift.c
+srcfile=src/gsttstimeshift.c
 
 # source helper functions
 if test ! -f common/gst-autogen.sh;

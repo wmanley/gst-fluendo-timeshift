@@ -1,5 +1,6 @@
-/* GStreamer Time Shifting
+/* GStreamer MPEG TS Time Shifting
  * Copyright (C) 2011 Fluendo S.A. <support@fluendo.com>
+ *               2013 YouView TV Ltd. <william.manley@youview.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -13,34 +14,32 @@
  *
  * You should have received a copy of the GNU Library General Public
  * License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ * Boston, MA 02110-1301, USA.
  */
 
-#ifndef __FLUTSBASE_H__
-#define __FLUTSBASE_H__
+#ifndef __GST_TS_SHIFTER_H__
+#define __GST_TS_SHIFTER_H__
 
-#include "flucache.h"
+#include "tscache.h"
 
 G_BEGIN_DECLS
-#define GST_FLUTSBASE_TYPE \
-  (gst_flutsbase_get_type())
-#define GST_FLUTSBASE(obj) \
-  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_FLUTSBASE_TYPE,GstFluTSBase))
-#define GST_FLUTSBASE_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_CAST((klass),GST_FLUTSBASE_TYPE,GstFluTSBaseClass))
-#define GST_IS_FLUTSBASE(obj) \
-  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_FLUTSBASE_TYPE))
-#define GST_IS_FLUTSBASE_CLASS(klass) \
-  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_FLUTSBASE_TYPE))
-#define GST_FLUTSBASE_CAST(obj) \
-  ((GstFluTSBase *)(obj))
-#define GST_FLUTSBASE_GET_CLASS(obj) \
-  (G_TYPE_INSTANCE_GET_CLASS ((obj),GST_FLUTSBASE_TYPE,GstFluTSBaseClass))
-typedef struct _GstFluTSBase GstFluTSBase;
-typedef struct _GstFluTSBaseClass GstFluTSBaseClass;
+#define GST_TS_SHIFTER_TYPE \
+  (gst_ts_shifter_get_type())
+#define GST_TS_SHIFTER(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TS_SHIFTER_TYPE,GstTSShifter))
+#define GST_TS_SHIFTER_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TS_SHIFTER_TYPE,GstTSShifterClass))
+#define GST_IS_TS_SHIFTER(obj) \
+  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TS_SHIFTER_TYPE))
+#define GST_IS_TS_SHIFTER_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TS_SHIFTER_TYPE))
+#define GST_TS_SHIFTER_CAST(obj) \
+  ((GstTSShifter *)(obj))
+typedef struct _GstTSShifter GstTSShifter;
+typedef struct _GstTSShifterClass GstTSShifterClass;
 
-struct _GstFluTSBase
+struct _GstTSShifter
 {
   GstElement element;
 
@@ -59,25 +58,25 @@ struct _GstFluTSBase
   gboolean need_newsegment;
 
   /* the cache of data we're keeping our hands on */
-  GstShifterCache *cache;
+  GstTSCache *cache;
   guint64 cache_size;
 
   guint cur_bytes;              /* current position in bytes  */
 
-  GMutex *flow_lock;            /* lock for flow control */
-  GCond *buffer_add;            /* signals buffers added to the cache */
+  GMutex flow_lock;             /* lock for flow control */
+  GCond buffer_add;             /* signals buffers added to the cache */
 
   gchar *allocator_name;
 
   GstEvent *stream_start_event;
 };
 
-struct _GstFluTSBaseClass
+struct _GstTSShifterClass
 {
   GstElementClass parent_class;
 };
 
-GType gst_flutsbase_get_type (void);
+GType gst_ts_shifter_get_type (void);
 
 G_END_DECLS
-#endif /* __FLUTSBASE_H__ */
+#endif /* __GST_TS_SHIFTER_H__ */

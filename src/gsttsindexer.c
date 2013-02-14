@@ -1,6 +1,6 @@
-/* GStreamer
+/* GStreamer MPEG TS Time Shifting
  * Copyright (C) 2011 Fluendo S.A. <support@fluendo.com>
- * Copyright (C) 2013 YouView TV Ltd. <will@williammanley.net>
+ * Copyright (C) 2013 YouView TV Ltd. <william.manley@youview.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -17,14 +17,15 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Suite 500,
  * Boston, MA 02110-1335, USA.
  */
+
 /**
- * SECTION:element-gsttimeshifttsindexer
+ * SECTION:element-gsttsindexer
  *
  * Populates a time/byte offset index for MPEG-TS streams based upon PCR
  * information.  An index to populate should be passed in as the "index"
  * property.
  *
- * This element is used by flutsmpegbin to create an index for timeshifting.
+ * This element is used by tsshifterbin to create an index for timeshifting.
  */
 
 #ifdef HAVE_CONFIG_H
@@ -34,10 +35,10 @@
 #include <gst/gst.h>
 #include <gst/gstelement.h>
 #include <gst/base/gstbasetransform.h>
-#include "gsttimeshifttsindexer.h"
+#include "gsttsindexer.h"
 
-GST_DEBUG_CATEGORY_STATIC (gst_time_shift_ts_indexer_debug_category);
-#define GST_CAT_DEFAULT gst_time_shift_ts_indexer_debug_category
+GST_DEBUG_CATEGORY_STATIC (gst_ts_indexer_debug_category);
+#define GST_CAT_DEFAULT gst_ts_indexer_debug_category
 
 #define DEFAULT_DELTA           500
 
@@ -57,22 +58,21 @@ GST_DEBUG_CATEGORY_STATIC (gst_time_shift_ts_indexer_debug_category);
 /* prototypes */
 
 
-static void gst_time_shift_ts_indexer_set_property (GObject * object,
+static void gst_ts_indexer_set_property (GObject * object,
     guint property_id, const GValue * value, GParamSpec * pspec);
-static void gst_time_shift_ts_indexer_get_property (GObject * object,
+static void gst_ts_indexer_get_property (GObject * object,
     guint property_id, GValue * value, GParamSpec * pspec);
-static void gst_time_shift_ts_indexer_dispose (GObject * object);
-static void gst_time_shift_ts_indexer_finalize (GObject * object);
+static void gst_ts_indexer_dispose (GObject * object);
+static void gst_ts_indexer_finalize (GObject * object);
 
-static gboolean gst_time_shift_ts_indexer_start (GstBaseTransform * trans);
-static gboolean gst_time_shift_ts_indexer_stop (GstBaseTransform * trans);
+static gboolean gst_ts_indexer_start (GstBaseTransform * trans);
+static gboolean gst_ts_indexer_stop (GstBaseTransform * trans);
 static GstFlowReturn
-gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * buf);
-static void gst_time_shift_ts_indexer_replace_index(GstTimeShiftTsIndexer * base,
-    GstIndex * new_index, gboolean own);
-static void
-gst_time_shift_ts_indexer_collect_time (GstTimeShiftTsIndexer * base,
-    guint8 * data, gsize size);
+gst_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * buf);
+static void gst_ts_indexer_replace_index (GstTSIndexer *
+    base, GstIndex * new_index, gboolean own);
+static void gst_ts_indexer_collect_time (GstTSIndexer *
+    base, guint8 * data, gsize size);
 
 
 enum
@@ -85,14 +85,14 @@ enum
 
 /* pad templates */
 
-static GstStaticPadTemplate gst_time_shift_ts_indexer_sink_template =
+static GstStaticPadTemplate gst_ts_indexer_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("video/mpegts")
     );
 
-static GstStaticPadTemplate gst_time_shift_ts_indexer_src_template =
+static GstStaticPadTemplate gst_ts_indexer_src_template =
 GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
@@ -102,20 +102,21 @@ GST_STATIC_PAD_TEMPLATE ("src",
 
 /* class initialization */
 
-G_DEFINE_TYPE (GstTimeShiftTsIndexer, gst_time_shift_ts_indexer, GST_TYPE_BASE_TRANSFORM);
-#define parent_class gst_time_shift_ts_indexer_parent_class
+G_DEFINE_TYPE (GstTSIndexer, gst_ts_indexer, GST_TYPE_BASE_TRANSFORM);
+#define parent_class gst_ts_indexer_parent_class
 
 static void
-gst_time_shift_ts_indexer_class_init (GstTimeShiftTsIndexerClass * klass)
+gst_ts_indexer_class_init (GstTSIndexerClass * klass)
 {
   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
-  GstBaseTransformClass *base_transform_class = GST_BASE_TRANSFORM_CLASS (klass);
+  GstBaseTransformClass *base_transform_class =
+      GST_BASE_TRANSFORM_CLASS (klass);
   GstElementClass *element_class = GST_ELEMENT_CLASS (klass);
 
   gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&gst_time_shift_ts_indexer_sink_template));
+      gst_static_pad_template_get (&gst_ts_indexer_sink_template));
   gst_element_class_add_pad_template (element_class,
-      gst_static_pad_template_get (&gst_time_shift_ts_indexer_src_template));
+      gst_static_pad_template_get (&gst_ts_indexer_src_template));
 
   gst_element_class_set_static_metadata (element_class,
       "Indexer for MPEG-TS streams", "Generic",
@@ -124,17 +125,18 @@ gst_time_shift_ts_indexer_class_init (GstTimeShiftTsIndexerClass * klass)
       "Fluendo S.A. <support@fluendo.com>, "
       "William Manley <will@williammanley.net>");
 
-  GST_DEBUG_CATEGORY_INIT (gst_time_shift_ts_indexer_debug_category,
-      "gst_time_shift_ts_indexer", 0, "Indexer for MPEG-TS streams");
+  GST_DEBUG_CATEGORY_INIT (gst_ts_indexer_debug_category,
+      "gst_ts_indexer", 0, "Indexer for MPEG-TS streams");
 
 
-  gobject_class->set_property = gst_time_shift_ts_indexer_set_property;
-  gobject_class->get_property = gst_time_shift_ts_indexer_get_property;
-  gobject_class->dispose = gst_time_shift_ts_indexer_dispose;
-  gobject_class->finalize = gst_time_shift_ts_indexer_finalize;
-  base_transform_class->start = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_start);
-  base_transform_class->stop = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_stop);
-  base_transform_class->transform_ip = GST_DEBUG_FUNCPTR (gst_time_shift_ts_indexer_transform_ip);
+  gobject_class->set_property = gst_ts_indexer_set_property;
+  gobject_class->get_property = gst_ts_indexer_get_property;
+  gobject_class->dispose = gst_ts_indexer_dispose;
+  gobject_class->finalize = gst_ts_indexer_finalize;
+  base_transform_class->start = GST_DEBUG_FUNCPTR (gst_ts_indexer_start);
+  base_transform_class->stop = GST_DEBUG_FUNCPTR (gst_ts_indexer_stop);
+  base_transform_class->transform_ip =
+      GST_DEBUG_FUNCPTR (gst_ts_indexer_transform_ip);
 
   g_object_class_install_property (gobject_class, PROP_INDEX,
       g_param_spec_object ("index", "Index",
@@ -155,10 +157,10 @@ gst_time_shift_ts_indexer_class_init (GstTimeShiftTsIndexerClass * klass)
 }
 
 static void
-gst_time_shift_ts_indexer_init (GstTimeShiftTsIndexer * indexer)
+gst_ts_indexer_init (GstTSIndexer * indexer)
 {
   GstBaseTransform *base = GST_BASE_TRANSFORM (indexer);
-  gst_base_transform_set_passthrough(base, TRUE);
+  gst_base_transform_set_passthrough (base, TRUE);
 
   indexer->pcr_pid = INVALID_PID;
   indexer->delta = DEFAULT_DELTA;
@@ -170,7 +172,7 @@ gst_time_shift_ts_indexer_init (GstTimeShiftTsIndexer * indexer)
 }
 
 static void
-gst_time_shift_ts_indexer_replace_index(GstTimeShiftTsIndexer * base,
+gst_ts_indexer_replace_index (GstTSIndexer * base,
     GstIndex * new_index, gboolean own)
 {
   if (base->index) {
@@ -185,15 +187,14 @@ gst_time_shift_ts_indexer_replace_index(GstTimeShiftTsIndexer * base,
 }
 
 void
-gst_time_shift_ts_indexer_set_property (GObject * object, guint property_id,
+gst_ts_indexer_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
 {
-  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (object);
+  GstTSIndexer *indexer = GST_TS_INDEXER (object);
 
   switch (property_id) {
     case PROP_INDEX:
-      gst_time_shift_ts_indexer_replace_index(indexer,
-          g_value_dup_object(value), FALSE);
+      gst_ts_indexer_replace_index (indexer, g_value_dup_object (value), FALSE);
       break;
     case PROP_PCR_PID:
       indexer->pcr_pid = g_value_get_int (value);
@@ -213,14 +214,14 @@ gst_time_shift_ts_indexer_set_property (GObject * object, guint property_id,
 }
 
 void
-gst_time_shift_ts_indexer_get_property (GObject * object, guint property_id,
+gst_ts_indexer_get_property (GObject * object, guint property_id,
     GValue * value, GParamSpec * pspec)
 {
-  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (object);
+  GstTSIndexer *indexer = GST_TS_INDEXER (object);
 
   switch (property_id) {
     case PROP_INDEX:
-      g_value_set_object(value, indexer->index);
+      g_value_set_object (value, indexer->index);
       break;
     case PROP_PCR_PID:
       g_value_set_int (value, indexer->pcr_pid);
@@ -239,20 +240,20 @@ gst_time_shift_ts_indexer_get_property (GObject * object, guint property_id,
 }
 
 void
-gst_time_shift_ts_indexer_dispose (GObject * object)
+gst_ts_indexer_dispose (GObject * object)
 {
-  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (object);
+  GstTSIndexer *indexer = GST_TS_INDEXER (object);
 
   /* clean up as possible.  may be called multiple times */
-  gst_time_shift_ts_indexer_replace_index(indexer, NULL, FALSE);
+  gst_ts_indexer_replace_index (indexer, NULL, FALSE);
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
 }
 
 void
-gst_time_shift_ts_indexer_finalize (GObject * object)
+gst_ts_indexer_finalize (GObject * object)
 {
-  /* GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (object); */
+  /* GstTSIndexer *indexer = GST_TS_INDEXER (object); */
 
   /* clean up object here */
 
@@ -260,19 +261,19 @@ gst_time_shift_ts_indexer_finalize (GObject * object)
 }
 
 static gboolean
-gst_time_shift_ts_indexer_start (GstBaseTransform * trans)
+gst_ts_indexer_start (GstBaseTransform * trans)
 {
-  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (trans);
+  GstTSIndexer *indexer = GST_TS_INDEXER (trans);
 
   /* If this is our own index destroy it as the old entries might be wrong */
   if (indexer->own_index) {
-    gst_time_shift_ts_indexer_replace_index(indexer, NULL, FALSE);
+    gst_ts_indexer_replace_index (indexer, NULL, FALSE);
   }
 
   /* If no index was created, generate one */
   if (G_UNLIKELY (!indexer->index)) {
     GST_DEBUG_OBJECT (indexer, "no index provided creating our own");
-    gst_time_shift_ts_indexer_replace_index(indexer,
+    gst_ts_indexer_replace_index (indexer,
         gst_index_factory_make ("memindex"), FALSE);
   }
 
@@ -280,16 +281,16 @@ gst_time_shift_ts_indexer_start (GstBaseTransform * trans)
 }
 
 static gboolean
-gst_time_shift_ts_indexer_stop (GstBaseTransform * trans)
+gst_ts_indexer_stop (GstBaseTransform * trans)
 {
 
   return TRUE;
 }
 
 static GstFlowReturn
-gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * buf)
+gst_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * buf)
 {
-  GstTimeShiftTsIndexer *indexer = GST_TIME_SHIFT_TS_INDEXER (trans);
+  GstTSIndexer *indexer = GST_TS_INDEXER (trans);
 
   GstFlowReturn ret = GST_FLOW_OK;
   GstMapInfo map;
@@ -300,7 +301,7 @@ gst_time_shift_ts_indexer_transform_ip (GstBaseTransform * trans, GstBuffer * bu
     goto out;
   }
 
-  gst_time_shift_ts_indexer_collect_time (indexer, map.data, map.size);
+  gst_ts_indexer_collect_time (indexer, map.data, map.size);
 
   gst_buffer_unmap (buf, &map);
 
@@ -323,7 +324,7 @@ is_next_sync_valid (const guint8 * in_data, guint size, guint offset)
 }
 
 static inline void
-add_index_entry (GstTimeShiftTsIndexer * base, GstClockTime time, guint64 offset)
+add_index_entry (GstTSIndexer * base, GstClockTime time, guint64 offset)
 {
   GstIndexAssociation associations[2];
 
@@ -339,12 +340,12 @@ add_index_entry (GstTimeShiftTsIndexer * base, GstClockTime time, guint64 offset
 }
 
 static inline guint64
-gst_time_shift_ts_indexer_parse_pcr (GstTimeShiftTsIndexer * ts, guint8 * data)
+gst_ts_indexer_parse_pcr (GstTSIndexer * ts, guint8 * data)
 {
   guint16 pid;
   guint32 pcr1;
   guint16 pcr2;
-  guint64 pcr = (guint64) -1, pcr_ext;
+  guint64 pcr = (guint64) - 1, pcr_ext;
 
   if (TS_PACKET_SYNC_CODE == data[0]) {
     /* Check Adaptation field, if it == b10 or b11 */
@@ -382,10 +383,10 @@ beach:
 }
 
 static inline guint64
-gst_time_shift_ts_indexer_get_pcr (GstTimeShiftTsIndexer * ts, guint8 ** in_data,
-    gsize * in_size, guint64 * offset)
+gst_ts_indexer_get_pcr (GstTSIndexer * ts,
+    guint8 ** in_data, gsize * in_size, guint64 * offset)
 {
-  guint64 pcr = (guint64) -1;
+  guint64 pcr = (guint64) - 1;
   gint i = 0;
   guint8 *data = *in_data;
   gsize size = *in_size;
@@ -393,14 +394,14 @@ gst_time_shift_ts_indexer_get_pcr (GstTimeShiftTsIndexer * ts, guint8 ** in_data
   /* mpegtsparse pushes PES packet buffers so this case must be handled
    * without checking for next SYNC code */
   if (size >= TS_MIN_PACKET_SIZE && size <= TS_MAX_PACKET_SIZE) {
-    pcr = gst_time_shift_ts_indexer_parse_pcr (ts, data);
+    pcr = gst_ts_indexer_parse_pcr (ts, data);
   } else {
     while ((i + TS_MAX_PACKET_SIZE) < size) {
       if (TS_PACKET_SYNC_CODE == data[i]) {
         /* Check the next SYNC byte for all packets except the last packet
          * in a buffer... */
         if (G_LIKELY (is_next_sync_valid (data, size, i))) {
-          pcr = gst_time_shift_ts_indexer_parse_pcr (ts, data + i);
+          pcr = gst_ts_indexer_parse_pcr (ts, data + i);
           if (pcr == -1) {
             /* Skip to start of next TSPacket (pre-subract for the i++ later) */
             i += (TS_MIN_PACKET_SIZE - 1);
@@ -419,10 +420,10 @@ gst_time_shift_ts_indexer_get_pcr (GstTimeShiftTsIndexer * ts, guint8 ** in_data
 }
 
 static void
-gst_time_shift_ts_indexer_collect_time (GstTimeShiftTsIndexer * base, guint8 * data, gsize size)
+gst_ts_indexer_collect_time (GstTSIndexer * base, guint8 * data, gsize size)
 {
 
-  GstTimeShiftTsIndexer *ts = GST_TIME_SHIFT_TS_INDEXER (base);
+  GstTSIndexer *ts = GST_TS_INDEXER (base);
   GstClockTime time;
   gsize remaining = size;
   guint64 pcr, offset;
@@ -434,8 +435,8 @@ gst_time_shift_ts_indexer_collect_time (GstTimeShiftTsIndexer * base, guint8 * d
 
   offset = ts->current_offset;
   while (remaining >= TS_MIN_PACKET_SIZE) {
-    pcr = gst_time_shift_ts_indexer_get_pcr (ts, &data, &remaining, &offset);
-    if (pcr != (guint64) -1) {
+    pcr = gst_ts_indexer_get_pcr (ts, &data, &remaining, &offset);
+    if (pcr != (guint64) - 1) {
       /* FIXME: handle wraparounds */
       if (!GST_CLOCK_TIME_IS_VALID (ts->base_time)) {
         /* First time we receive is time zero */
@@ -477,4 +478,3 @@ gst_time_shift_ts_indexer_collect_time (GstTimeShiftTsIndexer * base, guint8 * d
 beach:
   ts->current_offset += size;
 }
-

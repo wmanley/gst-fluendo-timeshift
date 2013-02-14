@@ -1,4 +1,4 @@
-/* GStreamer
+/* GStreamer MPEG TS Time Shifting
  * Copyright (C) <1999> Erik Walthinsen <omega@cse.ogi.edu>
  *
  * This library is free software; you can redistribute it and/or
@@ -13,23 +13,22 @@
  *
  * You should have received a copy of the GNU Library General Public
  * License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ * Boston, MA 02110-1301, USA.
  */
 
-#include "gst-compat.h"
-#include "flutsindex.h"
+#include "tsindex.h"
 
-#define GST_TYPE_FLUTS_MEM_INDEX              \
-  (gst_flutsindex_get_type ())
-#define GST_FLUTS_MEM_INDEX(obj)              \
-  (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_FLUTS_MEM_INDEX, GstFluTSMemIndex))
-#define GST_FLUTS_MEM_INDEX_CLASS(klass)      \
-  (G_TYPE_CHECK_CLASS_CAST ((klass), GST_TYPE_FLUTS_MEM_INDEX, GstFluTSMemIndexClass))
-#define GST_IS_FLUTS_MEM_INDEX(obj)           \
-  (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_FLUTS_MEM_INDEX))
-#define GST_IS_FLUTS_MEM_INDEX_CLASS(klass)     \
-  (GST_TYPE_CHECK_CLASS_TYPE ((klass), GST_TYPE_FLUTS_MEM_INDEX))
+#define GST_TYPE_TS_MEM_INDEX              \
+  (gst_ts_memindex_get_type ())
+#define GST_TS_MEM_INDEX(obj)              \
+  (G_TYPE_CHECK_INSTANCE_CAST ((obj), GST_TYPE_TS_MEM_INDEX, GstTSMemIndex))
+#define GST_TS_MEM_INDEX_CLASS(klass)      \
+  (G_TYPE_CHECK_CLASS_CAST ((klass), GST_TYPE_TS_MEM_INDEX, GstTSMemIndexClass))
+#define GST_IS_TS_MEM_INDEX(obj)           \
+  (G_TYPE_CHECK_INSTANCE_TYPE ((obj), GST_TYPE_TS_MEM_INDEX))
+#define GST_IS_TS_MEM_INDEX_CLASS(klass)   \
+  (GST_TYPE_CHECK_CLASS_TYPE ((klass), GST_TYPE_TS_MEM_INDEX))
 
 /*
  * Object model:
@@ -68,136 +67,136 @@ typedef struct
   gint offset;
   GTree *tree;
 }
-GstFluTSMemIndexFormatIndex;
+GstTSMemIndexFormatIndex;
 
 typedef struct
 {
   gint id;
   GHashTable *format_index;
 }
-GstFluTSMemIndexId;
+GstTSMemIndexId;
 
-typedef struct _GstFluTSMemIndex GstFluTSMemIndex;
-typedef struct _GstFluTSMemIndexClass GstFluTSMemIndexClass;
+typedef struct _GstTSMemIndex GstTSMemIndex;
+typedef struct _GstTSMemIndexClass GstTSMemIndexClass;
 
-struct _GstFluTSMemIndex
+struct _GstTSMemIndex
 {
-  GstFluTSIndex parent;
+  GstTSIndex parent;
 
   GList *associations;
 
   GHashTable *id_index;
 };
 
-struct _GstFluTSMemIndexClass
+struct _GstTSMemIndexClass
 {
-  GstFluTSIndexClass parent_class;
+  GstTSIndexClass parent_class;
 };
 
-static void gst_flutsmemindex_finalize (GObject * object);
+static void gst_ts_memindex_finalize (GObject * object);
 
-static void gst_flutsmemindex_add_entry (GstFluTSIndex * index,
-    GstFluTSIndexEntry * entry);
-static GstFluTSIndexEntry *gst_flutsmemindex_get_assoc_entry (GstFluTSIndex *
-    index, gint id, GstFluTSIndexLookupMethod method,
-    GstFluTSIndexAssociationFlags flags, GstFormat format, gint64 value,
+static void gst_ts_memindex_add_entry (GstTSIndex * index,
+    GstTSIndexEntry * entry);
+static GstTSIndexEntry *gst_ts_memindex_get_assoc_entry (GstTSIndex *
+    index, gint id, GstTSIndexLookupMethod method,
+    GstTSIndexAssociationFlags flags, GstFormat format, gint64 value,
     GCompareDataFunc func, gpointer user_data);
 
-#define CLASS(mem_index)  GST_FLUTS_MEM_INDEX_CLASS (G_OBJECT_GET_CLASS (mem_index))
+#define CLASS(mem_index) GST_TS_MEM_INDEX_CLASS (G_OBJECT_GET_CLASS (mem_index))
 
-static GType gst_flutsmemindex_get_type (void);
+static GType gst_ts_memindex_get_type (void);
 
-G_DEFINE_TYPE (GstFluTSMemIndex, gst_flutsmemindex, GST_TYPE_FLUTSINDEX);
+G_DEFINE_TYPE (GstTSMemIndex, gst_ts_memindex, GST_TYPE_TS_INDEX);
 
-GstFluTSIndex *
-gst_flutsmemindex_new (void)
+GstTSIndex *
+gst_ts_memindex_new (void)
 {
-  return GST_FLUTSINDEX (g_object_new (gst_flutsmemindex_get_type (), NULL));
+  return GST_TS_INDEX (g_object_new (gst_ts_memindex_get_type (), NULL));
 }
 
 static void
-gst_flutsmemindex_class_init (GstFluTSMemIndexClass * klass)
+gst_ts_memindex_class_init (GstTSMemIndexClass * klass)
 {
   GObjectClass *gobject_class;
-  GstFluTSIndexClass *gstindex_class;
+  GstTSIndexClass *gstindex_class;
 
   gobject_class = (GObjectClass *) klass;
-  gstindex_class = (GstFluTSIndexClass *) klass;
+  gstindex_class = (GstTSIndexClass *) klass;
 
-  gobject_class->finalize = gst_flutsmemindex_finalize;
+  gobject_class->finalize = gst_ts_memindex_finalize;
 
-  gstindex_class->add_entry = GST_DEBUG_FUNCPTR (gst_flutsmemindex_add_entry);
+  gstindex_class->add_entry = GST_DEBUG_FUNCPTR (gst_ts_memindex_add_entry);
   gstindex_class->get_assoc_entry =
-      GST_DEBUG_FUNCPTR (gst_flutsmemindex_get_assoc_entry);
+      GST_DEBUG_FUNCPTR (gst_ts_memindex_get_assoc_entry);
 }
 
 static void
-gst_flutsmemindex_init (GstFluTSMemIndex * index)
+gst_ts_memindex_init (GstTSMemIndex * index)
 {
   index->associations = NULL;
   index->id_index = g_hash_table_new (g_int_hash, g_int_equal);
 }
 
 static void
-gst_flutsmemindex_free_format (gpointer key, gpointer value, gpointer user_data)
+gst_ts_memindex_free_format (gpointer key, gpointer value, gpointer user_data)
 {
-  GstFluTSMemIndexFormatIndex *index = (GstFluTSMemIndexFormatIndex *) value;
+  GstTSMemIndexFormatIndex *index = (GstTSMemIndexFormatIndex *) value;
 
   if (index->tree) {
     g_tree_destroy (index->tree);
   }
 
-  g_slice_free (GstFluTSMemIndexFormatIndex, index);
+  g_slice_free (GstTSMemIndexFormatIndex, index);
 }
 
 static void
-gst_flutsmemindex_free_id (gpointer key, gpointer value, gpointer user_data)
+gst_ts_memindex_free_id (gpointer key, gpointer value, gpointer user_data)
 {
-  GstFluTSMemIndexId *id_index = (GstFluTSMemIndexId *) value;
+  GstTSMemIndexId *id_index = (GstTSMemIndexId *) value;
 
   if (id_index->format_index) {
-    g_hash_table_foreach (id_index->format_index, gst_flutsmemindex_free_format,
+    g_hash_table_foreach (id_index->format_index, gst_ts_memindex_free_format,
         NULL);
     g_hash_table_destroy (id_index->format_index);
     id_index->format_index = NULL;
   }
 
-  g_slice_free (GstFluTSMemIndexId, id_index);
+  g_slice_free (GstTSMemIndexId, id_index);
 }
 
 static void
-gst_flutsmemindex_finalize (GObject * object)
+gst_ts_memindex_finalize (GObject * object)
 {
-  GstFluTSMemIndex *memindex = GST_FLUTS_MEM_INDEX (object);
+  GstTSMemIndex *memindex = GST_TS_MEM_INDEX (object);
 
   /* Delete the trees referencing the associations first */
   if (memindex->id_index) {
-    g_hash_table_foreach (memindex->id_index, gst_flutsmemindex_free_id, NULL);
+    g_hash_table_foreach (memindex->id_index, gst_ts_memindex_free_id, NULL);
     g_hash_table_destroy (memindex->id_index);
     memindex->id_index = NULL;
   }
 
   /* Then delete the associations themselves */
   if (memindex->associations) {
-    g_list_foreach (memindex->associations, (GFunc) gst_flutsindex_entry_free,
+    g_list_foreach (memindex->associations, (GFunc) gst_ts_index_entry_free,
         NULL);
     g_list_free (memindex->associations);
     memindex->associations = NULL;
   }
 
-  G_OBJECT_CLASS (gst_flutsmemindex_parent_class)->finalize (object);
+  G_OBJECT_CLASS (gst_ts_memindex_parent_class)->finalize (object);
 }
 
 static void
-gst_flutsmemindex_add_id (GstFluTSIndex * index, GstFluTSIndexEntry * entry)
+gst_ts_memindex_add_id (GstTSIndex * index, GstTSIndexEntry * entry)
 {
-  GstFluTSMemIndex *memindex = GST_FLUTS_MEM_INDEX (index);
-  GstFluTSMemIndexId *id_index;
+  GstTSMemIndex *memindex = GST_TS_MEM_INDEX (index);
+  GstTSMemIndexId *id_index;
 
   id_index = g_hash_table_lookup (memindex->id_index, &entry->id);
 
   if (!id_index) {
-    id_index = g_slice_new0 (GstFluTSMemIndexId);
+    id_index = g_slice_new0 (GstTSMemIndexId);
 
     id_index->id = entry->id;
     id_index->format_index = g_hash_table_new (g_int_hash, g_int_equal);
@@ -208,12 +207,12 @@ gst_flutsmemindex_add_id (GstFluTSIndex * index, GstFluTSIndexEntry * entry)
 static gint
 mem_index_compare (gconstpointer a, gconstpointer b, gpointer user_data)
 {
-  GstFluTSMemIndexFormatIndex *index = user_data;
+  GstTSMemIndexFormatIndex *index = user_data;
   gint64 val1, val2;
   gint64 diff;
 
-  val1 = GST_FLUTSINDEX_ASSOC_VALUE (((GstFluTSIndexEntry *) a), index->offset);
-  val2 = GST_FLUTSINDEX_ASSOC_VALUE (((GstFluTSIndexEntry *) b), index->offset);
+  val1 = GST_TS_INDEX_ASSOC_VALUE (((GstTSIndexEntry *) a), index->offset);
+  val2 = GST_TS_INDEX_ASSOC_VALUE (((GstTSIndexEntry *) b), index->offset);
 
   diff = (val2 - val1);
 
@@ -221,18 +220,18 @@ mem_index_compare (gconstpointer a, gconstpointer b, gpointer user_data)
 }
 
 static void
-gst_flutsmemindex_index_format (GstFluTSMemIndexId * id_index,
-    GstFluTSIndexEntry * entry, gint assoc)
+gst_ts_memindex_index_format (GstTSMemIndexId * id_index,
+    GstTSIndexEntry * entry, gint assoc)
 {
-  GstFluTSMemIndexFormatIndex *index;
+  GstTSMemIndexFormatIndex *index;
   GstFormat *format;
 
-  format = &GST_FLUTSINDEX_ASSOC_FORMAT (entry, assoc);
+  format = &GST_TS_INDEX_ASSOC_FORMAT (entry, assoc);
 
   index = g_hash_table_lookup (id_index->format_index, format);
 
   if (!index) {
-    index = g_slice_new0 (GstFluTSMemIndexFormatIndex);
+    index = g_slice_new0 (GstTSMemIndexFormatIndex);
 
     index->format = *format;
     index->offset = assoc;
@@ -245,11 +244,10 @@ gst_flutsmemindex_index_format (GstFluTSMemIndexId * id_index,
 }
 
 static void
-gst_flutsmemindex_add_association (GstFluTSIndex * index,
-    GstFluTSIndexEntry * entry)
+gst_ts_memindex_add_association (GstTSIndex * index, GstTSIndexEntry * entry)
 {
-  GstFluTSMemIndex *memindex = GST_FLUTS_MEM_INDEX (index);
-  GstFluTSMemIndexId *id_index;
+  GstTSMemIndex *memindex = GST_TS_MEM_INDEX (index);
+  GstTSMemIndexId *id_index;
 
   memindex->associations = g_list_prepend (memindex->associations, entry);
 
@@ -257,21 +255,21 @@ gst_flutsmemindex_add_association (GstFluTSIndex * index,
   if (id_index) {
     gint i;
 
-    for (i = 0; i < GST_FLUTSINDEX_NASSOCS (entry); i++) {
-      gst_flutsmemindex_index_format (id_index, entry, i);
+    for (i = 0; i < GST_TS_INDEX_NASSOCS (entry); i++) {
+      gst_ts_memindex_index_format (id_index, entry, i);
     }
   }
 }
 
 static void
-gst_flutsmemindex_add_entry (GstFluTSIndex * index, GstFluTSIndexEntry * entry)
+gst_ts_memindex_add_entry (GstTSIndex * index, GstTSIndexEntry * entry)
 {
   switch (entry->type) {
-    case GST_FLUTSINDEX_ENTRY_ID:
-      gst_flutsmemindex_add_id (index, entry);
+    case GST_TS_INDEX_ENTRY_ID:
+      gst_ts_memindex_add_id (index, entry);
       break;
-    case GST_FLUTSINDEX_ENTRY_ASSOCIATION:
-      gst_flutsmemindex_add_association (index, entry);
+    case GST_TS_INDEX_ENTRY_ASSOCIATION:
+      gst_ts_memindex_add_association (index, entry);
       break;
     default:
       break;
@@ -281,24 +279,24 @@ gst_flutsmemindex_add_entry (GstFluTSIndex * index, GstFluTSIndexEntry * entry)
 typedef struct
 {
   gint64 value;
-  GstFluTSMemIndexFormatIndex *index;
+  GstTSMemIndexFormatIndex *index;
   gboolean exact;
-  GstFluTSIndexEntry *lower;
+  GstTSIndexEntry *lower;
   gint64 low_diff;
-  GstFluTSIndexEntry *higher;
+  GstTSIndexEntry *higher;
   gint64 high_diff;
 }
-GstFluTSMemIndexSearchData;
+GstTSMemIndexSearchData;
 
 static gint
 mem_index_search (gconstpointer a, gconstpointer b)
 {
-  GstFluTSMemIndexSearchData *data = (GstFluTSMemIndexSearchData *) b;
-  GstFluTSMemIndexFormatIndex *index = data->index;
+  GstTSMemIndexSearchData *data = (GstTSMemIndexSearchData *) b;
+  GstTSMemIndexFormatIndex *index = data->index;
   gint64 val1, val2;
   gint64 diff;
 
-  val1 = GST_FLUTSINDEX_ASSOC_VALUE (((GstFluTSIndexEntry *) a), index->offset);
+  val1 = GST_TS_INDEX_ASSOC_VALUE (((GstTSIndexEntry *) a), index->offset);
   val2 = data->value;
 
   diff = (val1 - val2);
@@ -312,13 +310,13 @@ mem_index_search (gconstpointer a, gconstpointer b)
   if (diff < 0) {
     if (diff > data->low_diff) {
       data->low_diff = diff;
-      data->lower = (GstFluTSIndexEntry *) a;
+      data->lower = (GstTSIndexEntry *) a;
     }
     diff = -1;
   } else {
     if (diff < data->high_diff) {
       data->high_diff = diff;
-      data->higher = (GstFluTSIndexEntry *) a;
+      data->higher = (GstTSIndexEntry *) a;
     }
     diff = 1;
   }
@@ -326,17 +324,17 @@ mem_index_search (gconstpointer a, gconstpointer b)
   return diff;
 }
 
-static GstFluTSIndexEntry *
-gst_flutsmemindex_get_assoc_entry (GstFluTSIndex * index, gint id,
-    GstFluTSIndexLookupMethod method,
-    GstFluTSIndexAssociationFlags flags,
+static GstTSIndexEntry *
+gst_ts_memindex_get_assoc_entry (GstTSIndex * index, gint id,
+    GstTSIndexLookupMethod method,
+    GstTSIndexAssociationFlags flags,
     GstFormat format, gint64 value, GCompareDataFunc func, gpointer user_data)
 {
-  GstFluTSMemIndex *memindex = GST_FLUTS_MEM_INDEX (index);
-  GstFluTSMemIndexId *id_index;
-  GstFluTSMemIndexFormatIndex *format_index;
-  GstFluTSIndexEntry *entry;
-  GstFluTSMemIndexSearchData data;
+  GstTSMemIndex *memindex = GST_TS_MEM_INDEX (index);
+  GstTSMemIndexId *id_index;
+  GstTSMemIndexFormatIndex *format_index;
+  GstTSIndexEntry *entry;
+  GstTSMemIndexSearchData data;
 
   id_index = g_hash_table_lookup (memindex->id_index, &id);
   if (!id_index)
@@ -348,7 +346,7 @@ gst_flutsmemindex_get_assoc_entry (GstFluTSIndex * index, gint id,
 
   data.value = value;
   data.index = format_index;
-  data.exact = (method == GST_FLUTSINDEX_LOOKUP_EXACT);
+  data.exact = (method == GST_TS_INDEX_LOOKUP_EXACT);
 
   /* setup data for low/high checks if we are not looking
    * for an exact match */
@@ -363,29 +361,29 @@ gst_flutsmemindex_get_assoc_entry (GstFluTSIndex * index, gint id,
 
   /* get the low/high values if we're not exact */
   if (entry == NULL && !data.exact) {
-    if (method == GST_FLUTSINDEX_LOOKUP_BEFORE)
+    if (method == GST_TS_INDEX_LOOKUP_BEFORE)
       entry = data.lower;
-    else if (method == GST_FLUTSINDEX_LOOKUP_AFTER) {
+    else if (method == GST_TS_INDEX_LOOKUP_AFTER) {
       entry = data.higher;
     }
   }
 
-  if (entry && ((GST_FLUTSINDEX_ASSOC_FLAGS (entry) & flags) != flags)) {
-    if (method != GST_FLUTSINDEX_LOOKUP_EXACT) {
+  if (entry && ((GST_TS_INDEX_ASSOC_FLAGS (entry) & flags) != flags)) {
+    if (method != GST_TS_INDEX_LOOKUP_EXACT) {
       GList *l_entry = g_list_find (memindex->associations, entry);
 
       entry = NULL;
 
       while (l_entry) {
-        entry = (GstFluTSIndexEntry *) l_entry->data;
+        entry = (GstTSIndexEntry *) l_entry->data;
 
         if (entry->id == id
-            && (GST_FLUTSINDEX_ASSOC_FLAGS (entry) & flags) == flags)
+            && (GST_TS_INDEX_ASSOC_FLAGS (entry) & flags) == flags)
           break;
 
-        if (method == GST_FLUTSINDEX_LOOKUP_BEFORE)
+        if (method == GST_TS_INDEX_LOOKUP_BEFORE)
           l_entry = g_list_next (l_entry);
-        else if (method == GST_FLUTSINDEX_LOOKUP_AFTER) {
+        else if (method == GST_TS_INDEX_LOOKUP_AFTER) {
           l_entry = g_list_previous (l_entry);
         }
       }

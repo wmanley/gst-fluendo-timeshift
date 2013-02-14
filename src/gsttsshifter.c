@@ -1,5 +1,6 @@
-/* GStreamer Time Shifting
+/* GStreamer MPEG TS Time Shifting
  * Copyright (C) 2011 Fluendo S.A. <support@fluendo.com>
+ *               2013 YouView TV Ltd. <william.manley@youview.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -13,21 +14,21 @@
  *
  * You should have received a copy of the GNU Library General Public
  * License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ * Boston, MA 02110-1301, USA.
  */
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
-#include "flutsbase.h"
+#include "gsttsshifter.h"
 
 #include <glib/gstdio.h>
 
-GST_DEBUG_CATEGORY_EXTERN (ts_base);
+GST_DEBUG_CATEGORY_EXTERN (ts_shifter);
 GST_DEBUG_CATEGORY_EXTERN (ts_flow);
-#define GST_CAT_DEFAULT (ts_base)
+#define GST_CAT_DEFAULT ts_shifter
 
 enum
 {
@@ -37,7 +38,7 @@ enum
 /* default property values */
 #define DEFAULT_RECORDING_REMOVE   TRUE
 #define DEFAULT_MIN_CACHE_SIZE     (4 * CACHE_SLOT_SIZE)        /* 4 cache slots */
-#define DEFAULT_CACHE_SIZE         (256 * 1024 * 1024)          /* 256 MB */
+#define DEFAULT_CACHE_SIZE         (256 * 1024 * 1024)  /* 256 MB */
 
 enum
 {
@@ -51,10 +52,10 @@ enum
   GST_CAT_LOG_OBJECT (ts_flow, ts,                                        \
       "(%s:%s) " msg ":%" G_GUINT64_FORMAT " bytes",                      \
       GST_DEBUG_PAD_NAME (pad),                                           \
-      gst_shifter_cache_fullness (ts->cache))
+      gst_ts_cache_fullness (ts->cache))
 
 #define FLOW_MUTEX_LOCK(ts) G_STMT_START {                                \
-  g_mutex_lock (ts->flow_lock);                                           \
+  g_mutex_lock (&ts->flow_lock);                                          \
 } G_STMT_END
 
 #define FLOW_MUTEX_LOCK_CHECK(ts,res,label) G_STMT_START {                \
@@ -64,12 +65,12 @@ enum
 } G_STMT_END
 
 #define FLOW_MUTEX_UNLOCK(ts) G_STMT_START {                              \
-  g_mutex_unlock (ts->flow_lock);                                         \
+  g_mutex_unlock (&ts->flow_lock);                                        \
 } G_STMT_END
 
 #define FLOW_WAIT_ADD_CHECK(ts, res, label) G_STMT_START {                \
   STATUS (ts, ts->srcpad, "wait for ADD");                                \
-  g_cond_wait (ts->buffer_add, ts->flow_lock);                            \
+  g_cond_wait (&ts->buffer_add, &ts->flow_lock);                          \
   if (res != GST_FLOW_OK) {                                               \
     STATUS (ts, ts->srcpad, "received ADD wakeup");                       \
     goto label;                                                           \
@@ -79,56 +80,36 @@ enum
 
 #define FLOW_SIGNAL_ADD(ts) G_STMT_START {                                \
   STATUS (ts, ts->sinkpad, "signal ADD");                                 \
-  g_cond_signal (ts->buffer_add);                                         \
+  g_cond_signal (&ts->buffer_add);                                        \
 } G_STMT_END
 
-static GstElementClass *parent_class = NULL;
-static void gst_flutsbase_class_init (GstFluTSBaseClass * klass);
-static void gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass);
 
-GType
-gst_flutsbase_get_type (void)
-{
-  static volatile gsize type = 0;
+G_DEFINE_TYPE (GstTSShifter, gst_ts_shifter, GST_TYPE_ELEMENT);
+#define parent_class gst_ts_shifter_parent_class
 
-  if (g_once_init_enter (&type)) {
-    GType _type;
-    static const GTypeInfo info = {
-      sizeof (GstFluTSBaseClass),
-      NULL,
-      NULL,
-      (GClassInitFunc) gst_flutsbase_class_init,
-      NULL,
-      NULL,
-      sizeof (GstFluTSBase),
-      0,
-      (GInstanceInitFunc) gst_flutsbase_init,
-    };
+static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
+    GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS ("video/mpegts"));
 
-    _type = g_type_register_static (GST_TYPE_ELEMENT,
-        "GstFluTSBase", &info, G_TYPE_FLAG_ABSTRACT);
-    g_once_init_leave (&type, _type);
-  }
-  return type;
-}
+static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
+    GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS ("video/mpegts"));
 
 static void
-gst_flutsbase_start (GstFluTSBase * ts)
+gst_ts_shifter_start (GstTSShifter * ts)
 {
   FLOW_MUTEX_LOCK (ts);
   if (ts->cache) {
-    gst_shifter_cache_unref (ts->cache);
+    gst_ts_cache_unref (ts->cache);
     ts->cache = NULL;
   }
 
-  ts->cache = gst_shifter_cache_new (ts->cache_size, ts->allocator_name);
+  ts->cache = gst_ts_cache_new (ts->cache_size, ts->allocator_name);
 
   gst_segment_init (&ts->segment, GST_FORMAT_BYTES);
   FLOW_MUTEX_UNLOCK (ts);
 }
 
 static void
-gst_flutsbase_set_allocator (GstFluTSBase * ts, const gchar * allocator)
+gst_ts_shifter_set_allocator (GstTSShifter * ts, const gchar * allocator)
 {
   GstState state;
 
@@ -148,8 +129,7 @@ gst_flutsbase_set_allocator (GstFluTSBase * ts, const gchar * allocator)
 /* ERROR */
 wrong_state:
   {
-    GST_WARNING_OBJECT (ts,
-        "setting allocator-name property in wrong state");
+    GST_WARNING_OBJECT (ts, "setting allocator-name property in wrong state");
     GST_OBJECT_UNLOCK (ts);
   }
 }
@@ -157,12 +137,12 @@ wrong_state:
 /* Pop a buffer from the cache and push it downstream.
  * This functions returns the result of the push. */
 static GstFlowReturn
-gst_flutsbase_pop (GstFluTSBase * ts)
+gst_ts_shifter_pop (GstTSShifter * ts)
 {
   GstFlowReturn ret = GST_FLOW_OK;
   GstBuffer *buffer;
 
-  if (!(buffer = gst_shifter_cache_pop (ts->cache, ts->is_eos)))
+  if (!(buffer = gst_ts_cache_pop (ts->cache, ts->is_eos)))
     goto no_item;
 
   if (ts->srcresult == GST_FLOW_FLUSHING) {
@@ -181,7 +161,7 @@ gst_flutsbase_pop (GstFluTSBase * ts)
     GstEvent *newsegment;
 
     ts->segment.start = GST_BUFFER_OFFSET (buffer);
-    ts->segment.time = 0; /* <- Not relevant for FORMAT_BYTES */
+    ts->segment.time = 0;       /* <- Not relevant for FORMAT_BYTES */
     ts->segment.flags |= GST_SEGMENT_FLAG_RESET;
 
     GST_DEBUG_OBJECT (ts, "pushing segment %" GST_SEGMENT_FORMAT, &ts->segment);
@@ -212,7 +192,7 @@ gst_flutsbase_pop (GstFluTSBase * ts)
      * cache we can push, we set a flag to make the sinkpad refuse more
      * buffers with an EOS return value until we receive something
      * pushable again or we get flushed. */
-    while ((buffer = gst_shifter_cache_pop (ts->cache, ts->is_eos))) {
+    while ((buffer = gst_ts_cache_pop (ts->cache, ts->is_eos))) {
       GST_CAT_LOG_OBJECT (ts_flow, ts, "dropping UNEXPECTED buffer %p", buffer);
       gst_buffer_unref (buffer);
     }
@@ -261,25 +241,25 @@ stream_start_failed:
 /* called repeadedly with @pad as the source pad. This function should push out
  * data to the peer element. */
 static void
-gst_flutsbase_loop (GstPad * pad)
+gst_ts_shifter_loop (GstPad * pad)
 {
-  GstFluTSBase *ts;
+  GstTSShifter *ts;
   GstFlowReturn ret;
 
-  ts = GST_FLUTSBASE (GST_PAD_PARENT (pad));
+  ts = GST_TS_SHIFTER (GST_PAD_PARENT (pad));
 
   /* have to lock for thread-safety */
   FLOW_MUTEX_LOCK_CHECK (ts, ts->srcresult, out_flushing);
 
-  if (gst_shifter_cache_is_empty (ts->cache) && !ts->is_eos) {
+  if (gst_ts_cache_is_empty (ts->cache) && !ts->is_eos) {
     GST_CAT_LOG_OBJECT (ts_flow, ts, "empty, waiting for new data");
     do {
       /* Wait for data to be available, we could be unlocked because of a flush. */
       FLOW_WAIT_ADD_CHECK (ts, ts->srcresult, out_flushing);
     }
-    while (gst_shifter_cache_is_empty (ts->cache) && !ts->is_eos);
+    while (gst_ts_cache_is_empty (ts->cache) && !ts->is_eos);
   }
-  ret = gst_flutsbase_pop (ts);
+  ret = gst_ts_shifter_pop (ts);
   ts->srcresult = ret;
   if (ret != GST_FLOW_OK)
     goto out_flushing;
@@ -313,7 +293,7 @@ out_flushing:
 }
 
 static GstFlowReturn
-gst_flutsbase_push (GstFluTSBase * ts, guint8 * data, gsize size)
+gst_ts_shifter_push (GstTSShifter * ts, guint8 * data, gsize size)
 {
   /* we have to lock since we span threads */
   FLOW_MUTEX_LOCK_CHECK (ts, ts->sinkresult, out_flushing);
@@ -325,7 +305,7 @@ gst_flutsbase_push (GstFluTSBase * ts, guint8 * data, gsize size)
     goto out_unexpected;
 
   /* add data to the cache */
-  if (!gst_shifter_cache_push (ts->cache, data, size)) {
+  if (!gst_ts_cache_push (ts->cache, data, size)) {
     goto out_eos;
   }
   FLOW_SIGNAL_ADD (ts);
@@ -359,9 +339,9 @@ out_unexpected:
 }
 
 static GstFlowReturn
-gst_flutsbase_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
+gst_ts_shifter_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
 {
-  GstFluTSBase *ts = GST_FLUTSBASE (parent);
+  GstTSShifter *ts = GST_TS_SHIFTER (parent);
   GstFlowReturn res;
   GstMapInfo map;
 
@@ -372,18 +352,18 @@ gst_flutsbase_chain (GstPad * pad, GstObject * parent, GstBuffer * buffer)
       GST_TIME_ARGS (GST_BUFFER_DURATION (buffer)));
 
   gst_buffer_map (buffer, &map, GST_MAP_READ);
-  res = gst_flutsbase_push (ts, map.data, map.size);
+  res = gst_ts_shifter_push (ts, map.data, map.size);
   gst_buffer_unmap (buffer, &map);
 
   gst_buffer_unref (buffer);
- 
+
   return res;
 }
 
 static inline gboolean
-gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
+gst_ts_shifter_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
-  GstFluTSBase *ts = GST_FLUTSBASE (parent);
+  GstTSShifter *ts = GST_TS_SHIFTER (parent);
   gboolean ret = TRUE;
 
   switch (GST_EVENT_TYPE (event)) {
@@ -434,7 +414,7 @@ gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       /* forward event */
       gst_pad_push_event (ts->srcpad, event);
 
-      gst_flutsbase_start (ts);
+      gst_ts_shifter_start (ts);
 
       FLOW_MUTEX_LOCK (ts);
       gst_event_replace (&ts->stream_start_event, NULL);
@@ -443,7 +423,7 @@ gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       ts->sinkresult = GST_FLOW_OK;
       ts->is_eos = FALSE;
       ts->unexpected = FALSE;
-      gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
+      gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_ts_shifter_loop,
           ts->srcpad, NULL);
       FLOW_MUTEX_UNLOCK (ts);
       break;
@@ -468,7 +448,7 @@ gst_flutsbase_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
 }
 
 static guint64
-gst_flutsbase_get_bytes_offset(GstFluTSBase * ts, GstFormat format,
+gst_ts_shifter_get_bytes_offset (GstTSShifter * ts, GstFormat format,
     GstSeekType type, gint64 start)
 {
   guint64 offset;
@@ -483,7 +463,7 @@ gst_flutsbase_get_bytes_offset(GstFluTSBase * ts, GstFormat format,
     if (type == GST_SEEK_TYPE_SET) {
       offset = start;
     } else if (type == GST_SEEK_TYPE_END) {
-      offset = gst_shifter_cache_get_total_bytes_received(ts->cache) + start;
+      offset = gst_ts_cache_get_total_bytes_received (ts->cache) + start;
     } else {
       offset = -1;
     }
@@ -492,7 +472,7 @@ gst_flutsbase_get_bytes_offset(GstFluTSBase * ts, GstFormat format,
 }
 
 static gboolean
-gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
+gst_ts_shifter_handle_seek (GstTSShifter * ts, GstEvent * event)
 {
   GstFormat format;
   GstSeekFlags flags;
@@ -510,8 +490,9 @@ gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
     goto beach;
   }
 
-  offset = gst_flutsbase_get_bytes_offset(ts, format, start_type, start);
-  if (G_UNLIKELY (offset == (guint64) -1 || !gst_shifter_cache_has_offset (ts->cache, offset))) {
+  offset = gst_ts_shifter_get_bytes_offset (ts, format, start_type, start);
+  if (G_UNLIKELY (offset == (guint64) - 1
+          || !gst_ts_cache_has_offset (ts->cache, offset))) {
     GST_WARNING_OBJECT (ts, "seek failed");
     goto beach;
   }
@@ -541,14 +522,14 @@ gst_flutsbase_handle_seek (GstFluTSBase * ts, GstEvent * event)
 
   /* Reconfigure the cache to handle the new offset */
   FLOW_MUTEX_LOCK (ts);
-  gst_shifter_cache_seek (ts->cache, offset);
+  gst_ts_cache_seek (ts->cache, offset);
 
   /* Restart the pushing loop */
   ts->srcresult = GST_FLOW_OK;
   ts->is_eos = FALSE;
   ts->unexpected = FALSE;
   ts->need_newsegment = TRUE;
-  gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_flutsbase_loop,
+  gst_pad_start_task (ts->srcpad, (GstTaskFunction) gst_ts_shifter_loop,
       ts->srcpad, NULL);
   FLOW_MUTEX_UNLOCK (ts);
   GST_DEBUG_OBJECT (ts, "loop started");
@@ -558,10 +539,10 @@ beach:
 }
 
 static inline gboolean
-gst_flutsbase_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
+gst_ts_shifter_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 {
   gboolean ret = TRUE;
-  GstFluTSBase *ts = GST_FLUTSBASE (parent);
+  GstTSShifter *ts = GST_TS_SHIFTER (parent);
 
   if (G_UNLIKELY (ts == NULL)) {
     gst_event_unref (event);
@@ -573,7 +554,7 @@ gst_flutsbase_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
     {
       GST_CAT_LOG_OBJECT (ts_flow, ts, "received seek event");
       /* Do the seek ourself now */
-      ret = gst_flutsbase_handle_seek (ts, event);
+      ret = gst_ts_shifter_handle_seek (ts, event);
       break;
     }
     case GST_EVENT_QOS:
@@ -593,10 +574,10 @@ gst_flutsbase_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
 }
 
 static gboolean
-gst_flutsbase_query (GstElement * element, GstQuery * query)
+gst_ts_shifter_query (GstElement * element, GstQuery * query)
 {
   gboolean ret = TRUE;
-  GstFluTSBase * ts = GST_FLUTSBASE (element);
+  GstTSShifter *ts = GST_TS_SHIFTER (element);
 
   switch (GST_QUERY_TYPE (query)) {
     case GST_QUERY_POSITION:
@@ -630,12 +611,11 @@ gst_flutsbase_query (GstElement * element, GstQuery * query)
 
       if (format == GST_FORMAT_BYTES) {
         GST_LOG_OBJECT (ts, "replying duration query with %" G_GUINT64_FORMAT,
-            gst_shifter_cache_get_total_bytes_received(ts->cache));
-        gst_query_set_duration (query, GST_FORMAT_BYTES, 
-            gst_shifter_cache_get_total_bytes_received(ts->cache));
+            gst_ts_cache_get_total_bytes_received (ts->cache));
+        gst_query_set_duration (query, GST_FORMAT_BYTES,
+            gst_ts_cache_get_total_bytes_received (ts->cache));
         ret = TRUE;
-      }
-      else {
+      } else {
         ret = FALSE;
       }
       break;
@@ -648,8 +628,7 @@ gst_flutsbase_query (GstElement * element, GstQuery * query)
       if (fmt == GST_FORMAT_BYTES) {
         gst_query_set_seeking (query, fmt, TRUE, 0, -1);
         ret = TRUE;
-      }
-      else {
+      } else {
         ret = FALSE;
       }
       break;
@@ -670,9 +649,9 @@ gst_flutsbase_query (GstElement * element, GstQuery * query)
 
 /* sink currently only operates in push mode */
 static inline gboolean
-gst_flutsbase_sink_activate (GstPad * pad, GstObject * parent, gboolean active)
+gst_ts_shifter_sink_activate (GstPad * pad, GstObject * parent, gboolean active)
 {
-  GstFluTSBase *ts = GST_FLUTSBASE (parent);
+  GstTSShifter *ts = GST_TS_SHIFTER (parent);
 
   if (active) {
     FLOW_MUTEX_LOCK (ts);
@@ -698,9 +677,9 @@ gst_flutsbase_sink_activate (GstPad * pad, GstObject * parent, gboolean active)
 /* src operating in push mode, we start a task on the source pad that pushes out
  * buffers from the cache */
 static inline gboolean
-gst_flutsbase_src_activate (GstPad * pad, GstObject * parent, gboolean active)
+gst_ts_shifter_src_activate (GstPad * pad, GstObject * parent, gboolean active)
 {
-  GstFluTSBase *ts = GST_FLUTSBASE (parent);
+  GstTSShifter *ts = GST_TS_SHIFTER (parent);
   gboolean ret = FALSE;
 
   if (active) {
@@ -710,7 +689,9 @@ gst_flutsbase_src_activate (GstPad * pad, GstObject * parent, gboolean active)
     ts->sinkresult = GST_FLOW_OK;
     ts->is_eos = FALSE;
     ts->unexpected = FALSE;
-    ret = gst_pad_start_task (pad, (GstTaskFunction) gst_flutsbase_loop, pad, NULL);
+    ret =
+        gst_pad_start_task (pad, (GstTaskFunction) gst_ts_shifter_loop, pad,
+        NULL);
     FLOW_MUTEX_UNLOCK (ts);
   } else {
     /* unblock loop function */
@@ -725,64 +706,66 @@ gst_flutsbase_src_activate (GstPad * pad, GstObject * parent, gboolean active)
     /* step 2, make sure streaming finishes */
     ret = gst_pad_stop_task (pad);
   }
- 
+
   return ret;
 }
 
 static gboolean
-gst_flutsbase_handle_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
+gst_ts_shifter_handle_sink_event (GstPad * pad, GstObject * parent,
+    GstEvent * event)
 {
-  return gst_flutsbase_sink_event (pad, parent, event);
+  return gst_ts_shifter_sink_event (pad, parent, event);
 }
 
 static gboolean
-gst_flutsbase_handle_src_event (GstPad * pad, GstObject * parent, GstEvent * event)
+gst_ts_shifter_handle_src_event (GstPad * pad, GstObject * parent,
+    GstEvent * event)
 {
-  return gst_flutsbase_src_event (pad, parent, event);
+  return gst_ts_shifter_src_event (pad, parent, event);
 }
 
 static gboolean
-gst_flutsbase_handle_src_query (GstPad * pad, GstObject * parent,
+gst_ts_shifter_handle_src_query (GstPad * pad, GstObject * parent,
     GstQuery * query)
 {
-  return gst_flutsbase_query (GST_ELEMENT (parent), query);
+  return gst_ts_shifter_query (GST_ELEMENT (parent), query);
 }
 
 static gboolean
-gst_flutsbase_sink_activate_mode (GstPad * pad, GstObject * parent,
+gst_ts_shifter_sink_activate_mode (GstPad * pad, GstObject * parent,
     GstPadMode mode, gboolean active)
 {
   gboolean ret = FALSE;
 
   if (mode == GST_PAD_MODE_PUSH) {
-    ret = gst_flutsbase_sink_activate (pad, parent, active);
+    ret = gst_ts_shifter_sink_activate (pad, parent, active);
   }
   return ret;
 }
 
 static gboolean
-gst_flutsbase_src_activate_mode (GstPad * pad, GstObject * parent,
+gst_ts_shifter_src_activate_mode (GstPad * pad, GstObject * parent,
     GstPadMode mode, gboolean active)
 {
   gboolean ret = FALSE;
 
   if (mode == GST_PAD_MODE_PUSH) {
-    ret = gst_flutsbase_src_activate (pad, parent, active);
+    ret = gst_ts_shifter_src_activate (pad, parent, active);
   }
   return ret;
 }
 
 static GstStateChangeReturn
-gst_flutsbase_change_state (GstElement * element, GstStateChange transition)
+gst_ts_shifter_change_state (GstElement * element, GstStateChange transition)
 {
-  GstFluTSBase *ts;
+  GstTSShifter *ts;
   GstStateChangeReturn ret = GST_STATE_CHANGE_SUCCESS;
 
-  ts = GST_FLUTSBASE (element);
+  ts = GST_TS_SHIFTER (element);
 
   switch (transition) {
     case GST_STATE_CHANGE_READY_TO_PAUSED:
-      gst_flutsbase_start (ts);
+      gst_ts_shifter_start (ts);
       gst_event_replace (&ts->stream_start_event, NULL);
       break;
     case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
@@ -812,10 +795,10 @@ gst_flutsbase_change_state (GstElement * element, GstStateChange transition)
 }
 
 static void
-gst_flutsbase_set_property (GObject * object,
+gst_ts_shifter_set_property (GObject * object,
     guint prop_id, const GValue * value, GParamSpec * pspec)
 {
-  GstFluTSBase *ts = GST_FLUTSBASE (object);
+  GstTSShifter *ts = GST_TS_SHIFTER (object);
 
   /* someone could change size here, and since this
    * affects the get/put funcs, we need to lock for safety. */
@@ -826,7 +809,7 @@ gst_flutsbase_set_property (GObject * object,
       ts->cache_size = g_value_get_uint64 (value);
       break;
     case PROP_ALLOCATOR_NAME:
-      gst_flutsbase_set_allocator (ts, g_value_get_string (value));
+      gst_ts_shifter_set_allocator (ts, g_value_get_string (value));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -837,10 +820,10 @@ gst_flutsbase_set_property (GObject * object,
 }
 
 static void
-gst_flutsbase_get_property (GObject * object,
+gst_ts_shifter_get_property (GObject * object,
     guint prop_id, GValue * value, GParamSpec * pspec)
 {
-  GstFluTSBase *ts = GST_FLUTSBASE (object);
+  GstTSShifter *ts = GST_TS_SHIFTER (object);
 
   FLOW_MUTEX_LOCK (ts);
 
@@ -860,14 +843,14 @@ gst_flutsbase_get_property (GObject * object,
 }
 
 static void
-gst_flutsbase_finalize (GObject * object)
+gst_ts_shifter_finalize (GObject * object)
 {
-  GstFluTSBase *ts = GST_FLUTSBASE (object);
+  GstTSShifter *ts = GST_TS_SHIFTER (object);
 
-  GST_DEBUG_OBJECT (ts, "finalizing tsbase");
+  GST_DEBUG_OBJECT (ts, "finalizing ts_shifter");
 
-  g_mutex_free (ts->flow_lock);
-  g_cond_free (ts->buffer_add);
+  g_mutex_clear (&ts->flow_lock);
+  g_cond_clear (&ts->buffer_add);
 
   g_free (ts->allocator_name);
 
@@ -875,15 +858,26 @@ gst_flutsbase_finalize (GObject * object)
 }
 
 static void
-gst_flutsbase_class_init (GstFluTSBaseClass * klass)
+gst_ts_shifter_class_init (GstTSShifterClass * klass)
 {
   GObjectClass *gclass = G_OBJECT_CLASS (klass);
   GstElementClass *eclass = GST_ELEMENT_CLASS (klass);
 
-  parent_class = g_type_class_peek_parent (klass);
+  /* GstElement related stuff */
+  gst_element_class_add_pad_template (eclass,
+      gst_static_pad_template_get (&src_factory));
+  gst_element_class_add_pad_template (eclass,
+      gst_static_pad_template_get (&sink_factory));
 
-  gclass->set_property = gst_flutsbase_set_property;
-  gclass->get_property = gst_flutsbase_get_property;
+  gst_element_class_set_static_metadata (eclass,
+      "Time Shift for MPEG TS streams",
+      "Generic",
+      "Provide time shift operations on MPEG TS streams",
+      "Fluendo S.A. <support@fluendo.com>, "
+      "YouView TV Ltd <william.manley@youview.com>");
+
+  gclass->set_property = gst_ts_shifter_set_property;
+  gclass->get_property = gst_ts_shifter_get_property;
 
   /* properties */
   g_object_class_install_property (gclass, PROP_CACHE_SIZE,
@@ -900,37 +894,33 @@ gst_flutsbase_class_init (GstFluTSBaseClass * klass)
           NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   /* set several parent class virtual functions */
-  gclass->finalize = gst_flutsbase_finalize;
+  gclass->finalize = gst_ts_shifter_finalize;
 
-  eclass->change_state = GST_DEBUG_FUNCPTR (gst_flutsbase_change_state);
-  eclass->query = GST_DEBUG_FUNCPTR (gst_flutsbase_query);
+  eclass->change_state = GST_DEBUG_FUNCPTR (gst_ts_shifter_change_state);
+  eclass->query = GST_DEBUG_FUNCPTR (gst_ts_shifter_query);
 }
 
 static void
-gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass)
+gst_ts_shifter_init (GstTSShifter * ts)
 {
-  ts->sinkpad =
-      gst_pad_new_from_template (gst_element_class_get_pad_template
-      (GST_ELEMENT_CLASS (klass), "sink"), "sink");
+  ts->sinkpad = gst_pad_new_from_static_template (&sink_factory, "sink");
 
   gst_pad_set_chain_function (ts->sinkpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_chain));
+      GST_DEBUG_FUNCPTR (gst_ts_shifter_chain));
   gst_pad_set_activatemode_function (ts->sinkpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_sink_activate_mode));
+      GST_DEBUG_FUNCPTR (gst_ts_shifter_sink_activate_mode));
   gst_pad_set_event_function (ts->sinkpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_handle_sink_event));
+      GST_DEBUG_FUNCPTR (gst_ts_shifter_handle_sink_event));
   gst_element_add_pad (GST_ELEMENT (ts), ts->sinkpad);
 
-  ts->srcpad =
-      gst_pad_new_from_template (gst_element_class_get_pad_template
-      (GST_ELEMENT_CLASS (klass), "src"), "src");
+  ts->srcpad = gst_pad_new_from_static_template (&src_factory, "src");
 
   gst_pad_set_activatemode_function (ts->srcpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_src_activate_mode));
+      GST_DEBUG_FUNCPTR (gst_ts_shifter_src_activate_mode));
   gst_pad_set_event_function (ts->srcpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_handle_src_event));
+      GST_DEBUG_FUNCPTR (gst_ts_shifter_handle_src_event));
   gst_pad_set_query_function (ts->srcpad,
-      GST_DEBUG_FUNCPTR (gst_flutsbase_handle_src_query));
+      GST_DEBUG_FUNCPTR (gst_ts_shifter_handle_src_query));
   gst_element_add_pad (GST_ELEMENT (ts), ts->srcpad);
 
   /* set default values */
@@ -941,12 +931,12 @@ gst_flutsbase_init (GstFluTSBase * ts, GstFluTSBaseClass * klass)
   ts->is_eos = FALSE;
   ts->need_newsegment = TRUE;
 
-  ts->flow_lock = g_mutex_new ();
-  ts->buffer_add = g_cond_new ();
+  g_mutex_init (&ts->flow_lock);
+  g_cond_init (&ts->buffer_add);
 
   ts->allocator_name = NULL;
 
   ts->cache_size = DEFAULT_CACHE_SIZE;
 
-  GST_DEBUG_OBJECT (ts, "initialized time shift base");
+  GST_DEBUG_OBJECT (ts, "initialized time shifter");
 }

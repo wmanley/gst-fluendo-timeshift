@@ -1,6 +1,29 @@
 #!/usr/bin/python
+
+#
+# GStreamer MPEG TS Time Shifting
+# Copyright (C) 2011 Fluendo S.A. <support@fluendo.com>
+#               2013 YouView TV Ltd. <krzysztof.konopko@youview.com>
+#
+# video-player.py: A simple GUI for playing TS streams.
+#
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Library General Public
+# License as published by the Free Software Foundation; either
+# version 2 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Library General Public License for more details.
+#
+# You should have received a copy of the GNU Library General Public
+# License along with this library; if not, write to the
+# Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+# Boston, MA 02110-1301, USA.
+#
+ 
 '''
-A simple GUI for playing TS streams.
 Prticularily this scrip was devised to evaluate/demonstrate timeshifting.
 
 It uses GObject introspection so the assumption is that GStreamer-1.0
@@ -85,17 +108,15 @@ class Player(object):
         self.bus.connect('sync-message::element', self.on_sync_message)
 
         ring_buffer_size = 512 * 1024 * 1024
-        
-        Gst.filemem_allocator_init(ring_buffer_size, '/tmp/fma-XXXXXX')
 
         # Create GStreamer elements
         self.playbin = Gst.parse_bin_from_description(
             src_description + \
             ' ! queue ' \
-            ' ! flumpegshifterbin name=timeshifter' \
-                ' cache-size=%u allocator-name=%s' \
+            ' ! tsshifterbin name=timeshifter' \
+                ' cache-size=%u' \
             ' ! decodebin ! autovideosink'
-            % (ring_buffer_size, Gst.ALLOCATOR_FILEMEM),
+            % (ring_buffer_size),
             False);
         self.pipeline.add(self.playbin)
 
