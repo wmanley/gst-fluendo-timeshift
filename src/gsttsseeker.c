@@ -222,6 +222,11 @@ gst_ts_seeker_bytes_to_stream_time (GstTSSeeker * ts, guint64 buffer_offset,
   GstIndexEntry *entry = NULL;
   GstClockTime ret;
 
+  if (!ts->index) {
+    GST_DEBUG_OBJECT (ts, "no index");
+    return GST_CLOCK_TIME_NONE;
+  }
+
   /* Let's check if we have an index entry for that seek bytes */
   entry = gst_index_get_assoc_entry (ts->index,
       GST_INDEX_LOOKUP_BEFORE, GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_BYTES,
@@ -493,8 +498,15 @@ gst_ts_seeker_query (GstBaseTransform * base, GstPadDirection direction,
       GstQuery *buf_query;
       gboolean ret = FALSE;
 
+      if (!GST_QUERY_IS_UPSTREAM (query)) {
+	/* Can't see any use cases for non-upstream queries here */
+	break;
+      }
+
       gst_query_parse_buffering_range (query, &format, NULL, NULL, NULL);
       if (format != GST_FORMAT_TIME) {
+	/* Not interested in handling other formats.
+	   Let the upstream elements deal with it. */
         break;
       }
 

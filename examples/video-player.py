@@ -22,7 +22,7 @@
 # Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
 # Boston, MA 02110-1301, USA.
 #
- 
+
 '''
 Prticularily this scrip was devised to evaluate/demonstrate timeshifting.
 
@@ -143,7 +143,7 @@ class Player(object):
         self.pipeline.add(self.playbin)
 
         self.update_id = GObject.timeout_add(1000, self.update_scale_cb)
-    
+
     def update_scale_cb(self):
         self.position, self.duration = self.query_position()
         self.label_duration.set_text('duration: %s' % self.format_time(self.duration))
@@ -160,7 +160,7 @@ class Player(object):
             print "Buffering query failed"
 
         return True
-    
+
     def query_position(self):
         try:
             format, position = self.pipeline.query_position(Gst.Format.TIME)
@@ -177,7 +177,7 @@ class Player(object):
     def format_time(self, value):
         seconds = value / Gst.SECOND
         return '%02d:%02d' % (seconds / 60, seconds % 60)
-        
+
     def scale_format_value_cb(self, scale, value):
         if Gst.CLOCK_TIME_NONE == self.duration:
             real = 0
@@ -206,7 +206,7 @@ class Player(object):
         if s.get_name() == 'prepare-window-handle':
             print('prepare-window-handle')
             msg.src.set_window_handle(self.xid)
-        
+
     def seek(self, location):
         #print 'seeking to %r' % location
         res = self.pipeline.seek(1.0, Gst.Format.TIME,
@@ -272,7 +272,7 @@ class Player(object):
     def on_eos(self, bus, msg):
         print('on_eos(): seeking to start of video')
         self.pipeline.seek_simple(
-            Gst.Format.TIME,        
+            Gst.Format.TIME,
             Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT,
             0)
 
@@ -300,4 +300,3 @@ def main(argv):
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))
-
