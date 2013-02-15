@@ -499,14 +499,14 @@ gst_ts_seeker_query (GstBaseTransform * base, GstPadDirection direction,
       gboolean ret = FALSE;
 
       if (!GST_QUERY_IS_UPSTREAM (query)) {
-	/* Can't see any use cases for non-upstream queries here */
-	break;
+        /* Can't see any use cases for non-upstream queries here */
+        break;
       }
 
       gst_query_parse_buffering_range (query, &format, NULL, NULL, NULL);
       if (format != GST_FORMAT_TIME) {
-	/* Not interested in handling other formats.
-	   Let the upstream elements deal with it. */
+        /* Not interested in handling other formats.
+           Let the upstream elements deal with it. */
         break;
       }
 
