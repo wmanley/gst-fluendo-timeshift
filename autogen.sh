@@ -1,6 +1,12 @@
 #!/bin/sh
 # Run this to generate all the initial makefiles, etc.
 
+srcdir=`dirname $0`
+test -z "$srcdir" && srcdir=.
+
+ORIGDIR=`pwd`
+cd "$srcdir"
+
 DIE=0
 package=gst-fluendo-timeshift
 srcfile=src/gsttstimeshift.c
@@ -72,8 +78,10 @@ test ! -z "$CONFIGURE_DEF_OPT" && echo "  ./configure default flags: $CONFIGURE_
 test ! -z "$CONFIGURE_EXT_OPT" && echo "  ./configure external flags: $CONFIGURE_EXT_OPT"
 echo
 
-echo ./configure $CONFIGURE_DEF_OPT $CONFIGURE_EXT_OPT
-./configure $CONFIGURE_DEF_OPT $CONFIGURE_EXT_OPT || {
+cd ${ORIGDIR}
+
+echo $srcdir/configure $CONFIGURE_DEF_OPT $CONFIGURE_EXT_OPT $@
+$srcdir/configure $CONFIGURE_DEF_OPT $CONFIGURE_EXT_OPT $@ || {
         echo "  configure failed"
         exit 1
 }
