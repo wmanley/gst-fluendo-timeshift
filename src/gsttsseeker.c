@@ -328,16 +328,17 @@ gst_ts_seeker_sink_event (GstBaseTransform * trans, GstEvent * event)
 static guint64
 gst_ts_seeker_get_duration_bytes (GstTSSeeker * seeker)
 {
+  gint64 duration = 0;
+
   GstBaseTransform *base = GST_BASE_TRANSFORM (seeker);
   GstQuery *query = gst_query_new_duration (GST_FORMAT_BYTES);
-  gboolean success = gst_pad_peer_query (base->sinkpad, query);
-  if (success) {
-    gint64 duration = -1;
+
+  if (gst_pad_peer_query (base->sinkpad, query)) {
     gst_query_parse_duration (query, NULL, &duration);
-    return duration;
-  } else {
-    return 0;
   }
+
+  gst_query_unref (query);
+  return duration;
 }
 
 static GstClockTime
@@ -526,7 +527,7 @@ gst_ts_seeker_query (GstBaseTransform * base, GstPadDirection direction,
         ret = TRUE;
       }
 
-      gst_object_unref (buf_query);
+      gst_query_unref (buf_query);
       return ret;
     }
 
