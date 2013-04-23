@@ -56,6 +56,7 @@ struct _GstTSShifter
   gboolean is_eos;
   gboolean unexpected;
   gboolean need_newsegment;
+  gboolean is_leaking;
 
   /* the cache of data we're keeping our hands on */
   GstTSCache *cache;
@@ -74,6 +75,9 @@ struct _GstTSShifter
 struct _GstTSShifterClass
 {
   GstElementClass parent_class;
+
+  /* signals */
+  void (*overrun) (GstTSShifter *tsshifter);
 };
 
 GType gst_ts_shifter_get_type (void);

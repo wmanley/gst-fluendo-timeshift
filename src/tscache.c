@@ -487,7 +487,6 @@ gst_ts_cache_push (GstTSCache * cache, guint8 * data, gsize size)
       size -= avail;
       cache->h_offset += avail;
     } else {
-      // TODO: This should be handled in a designed manner
       return FALSE;
     }
   }

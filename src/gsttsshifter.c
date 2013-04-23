@@ -32,6 +32,7 @@ GST_DEBUG_CATEGORY_EXTERN (ts_flow);
 
 enum
 {
+  SIGNAL_OVERRUN,
   LAST_SIGNAL
 };
 
@@ -92,6 +93,8 @@ static GstStaticPadTemplate src_factory = GST_STATIC_PAD_TEMPLATE ("src",
 
 static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK, GST_PAD_ALWAYS, GST_STATIC_CAPS ("video/mpegts"));
+
+static guint gst_ts_shifter_signals[LAST_SIGNAL] = { 0 };
 
 static void
 gst_ts_shifter_start (GstTSShifter * ts)
@@ -306,8 +309,10 @@ gst_ts_shifter_push (GstTSShifter * ts, guint8 * data, gsize size)
 
   /* add data to the cache */
   if (!gst_ts_cache_push (ts->cache, data, size)) {
-    goto out_eos;
+    goto out_leaking;
   }
+  ts->is_leaking = FALSE;
+
   FLOW_SIGNAL_ADD (ts);
 
   FLOW_MUTEX_UNLOCK (ts);
@@ -315,6 +320,22 @@ gst_ts_shifter_push (GstTSShifter * ts, guint8 * data, gsize size)
   return GST_FLOW_OK;
 
   /* special conditions */
+out_leaking:
+  {
+    gboolean emit_overrun = FALSE;
+
+    GST_CAT_LOG_OBJECT (ts_flow, ts, "leaking %" G_GSIZE_FORMAT " bytes of data", size);
+    if (!ts->is_leaking) {
+      ts->is_leaking = TRUE;
+      emit_overrun = TRUE;
+    }
+    FLOW_MUTEX_UNLOCK (ts);
+
+    if (emit_overrun) {
+      g_signal_emit (ts, gst_ts_shifter_signals[SIGNAL_OVERRUN], 0);
+    }
+    return GST_FLOW_OK;
+  }
 out_flushing:
   {
     GstFlowReturn ret = ts->sinkresult;
@@ -896,6 +917,20 @@ gst_ts_shifter_class_init (GstTSShifterClass * klass)
   gclass->set_property = gst_ts_shifter_set_property;
   gclass->get_property = gst_ts_shifter_get_property;
 
+  /* signals */
+  /**
+   * GstTSShifter::overrun:
+   * @tsshifter: the shifter instance
+   *
+   * Reports that the ring buffer buffer became full (overrun).
+   * A buffer is full if the total amount of data inside it (size) is higher
+   * than the boundary value which can be set through the GObject properties.
+   */
+  gst_ts_shifter_signals[SIGNAL_OVERRUN] =
+      g_signal_new ("overrun", G_TYPE_FROM_CLASS (klass), G_SIGNAL_RUN_FIRST,
+      G_STRUCT_OFFSET (GstTSShifterClass, overrun), NULL, NULL,
+      g_cclosure_marshal_VOID__VOID, G_TYPE_NONE, 0);
+
   /* properties */
   g_object_class_install_property (gclass, PROP_CACHE_SIZE,
       g_param_spec_uint64 ("cache-size",
@@ -947,6 +982,7 @@ gst_ts_shifter_init (GstTSShifter * ts)
   ts->sinkresult = GST_FLOW_FLUSHING;
   ts->is_eos = FALSE;
   ts->need_newsegment = TRUE;
+  ts->is_leaking = FALSE;
 
   g_mutex_init (&ts->flow_lock);
   g_cond_init (&ts->buffer_add);
