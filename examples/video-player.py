@@ -294,7 +294,7 @@ def main(argv):
         '''
         src = 'udpsrc port=10000 caps="video/mpegts, media=(string)video, encoding-name=(string)MP2T-ES"'
     else:
-        src = 'souphttpsrc is-live=true location=%s' % (sys.argv[1])
+        src = 'souphttpsrc location=%s' % (sys.argv[1])
     p = Player(src)
     p.run()
 
