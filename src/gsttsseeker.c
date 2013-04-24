@@ -240,15 +240,18 @@ gst_ts_seeker_bytes_to_stream_time (GstTSSeeker * ts, guint64 buffer_offset,
     gst_index_entry_assoc_map (entry, GST_FORMAT_TIME, &time);
 
     GST_DEBUG_OBJECT (ts, "found index entry at %" GST_TIME_FORMAT " pos %"
-        G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
+        G_GINT64_FORMAT, GST_TIME_ARGS (time), offset);
     if (accurate && buffer_offset != offset) {
       GST_ELEMENT_WARNING (ts, RESOURCE, FAILED,
           ("Bytes->time conversion inaccurate"),
-          ("Lookup of byte offset not accurate: Returned byte offset %lld doesn't match requested offset %lld.  Time: %lld",
-              offset, buffer_offset, time));
+          ("Lookup of byte offset not accurate: "
+	   "Returned byte offset %" G_GINT64_FORMAT " doesn't match "
+	   "requested offset %" G_GUINT64_FORMAT ".  Time: %" GST_TIME_FORMAT,
+	   offset, buffer_offset, GST_TIME_ARGS(time)));
     } else {
-      GST_DEBUG_OBJECT (ts, "found index entry at %" GST_TIME_FORMAT " pos %"
-          G_GUINT64_FORMAT, GST_TIME_ARGS (time), offset);
+      GST_DEBUG_OBJECT (ts, "found index entry at %" GST_TIME_FORMAT
+			" pos %" G_GUINT64_FORMAT,
+			GST_TIME_ARGS (time), offset);
     }
     ret = (GstClockTime) time;
   } else if (buffer_offset == 0) {
@@ -257,11 +260,12 @@ gst_ts_seeker_bytes_to_stream_time (GstTSSeeker * ts, guint64 buffer_offset,
     if (accurate) {
       GST_ELEMENT_WARNING (ts, RESOURCE, FAILED,
           ("Bytes->time conversion failed"),
-          ("Lookup of byte offset %i failed: No index entry for that byte offset",
-              buffer_offset));
+          ("Lookup of byte offset %" G_GUINT64_FORMAT " failed: "
+	   "No index entry for that byte offset",
+	   buffer_offset));
     } else {
-      GST_DEBUG_OBJECT (ts, "no entry for position %lli in %p", buffer_offset,
-          ts->index);
+      GST_DEBUG_OBJECT (ts, "no entry for position %" G_GUINT64_FORMAT " in %p",
+			buffer_offset, ts->index);
     }
 
     ret = GST_CLOCK_TIME_NONE;
