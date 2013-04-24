@@ -151,13 +151,9 @@ class Player(object):
             value = self.position * 100.0 / self.duration
             self.adjustment.set_value(value)
 
-        buffering = Gst.Query.new_buffering(Gst.Format.TIME)
-        if self.pipeline.query(buffering):
-            dummy1, buf_start, buf_end, dummy2 = buffering.parse_buffering_range()
-            self.label_buf_begin.set_text('buffer begin: %s' % self.format_time(buf_start))
-            self.label_buf_end.set_text('buffer end: %s' % self.format_time(buf_end))
-        else:
-            print "Buffering query failed"
+        buf_start, buf_end = self.query_buffering()
+        self.label_buf_begin.set_text('buffer begin: %s' % self.format_time(buf_start))
+        self.label_buf_end.set_text('buffer end: %s' % self.format_time(buf_end))
 
         return True
 
@@ -173,6 +169,17 @@ class Player(object):
             duration = Gst.CLOCK_TIME_NONE
 
         return (position, duration)
+
+    def query_buffering(self):
+        buffering = Gst.Query.new_buffering(Gst.Format.TIME)
+        if self.pipeline.query(buffering):
+            _, buf_start, buf_end, _ = buffering.parse_buffering_range()
+        else:
+            print 'Buffering query failed'
+            buf_start = 0
+            buf_end = 0;
+
+        return (buf_start, buf_end)
 
     def format_time(self, value):
         seconds = value / Gst.SECOND
