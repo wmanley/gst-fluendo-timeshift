@@ -135,12 +135,25 @@ class Player(object):
         self.playbin = Gst.parse_bin_from_description(
             src_description + \
             ' ! queue ' \
-            ' ! tsshifterbin name=timeshifter' \
+            ' ! tsshifterbin name=timeshifterbin' \
                 ' cache-size=%u' \
             ' ! decodebin ! autovideosink'
             % (ring_buffer_size),
             False);
         self.pipeline.add(self.playbin)
+
+        ts = self.pipeline.get_by_name("timeshifter");
+        if ts:
+            def overrun_handler(obj):
+                print 'Received overrun signal'
+                buf_begin, _ = self.query_buffering()
+                seek_to = buf_begin + 2 * Gst.SECOND
+                print 'Will seek to %s' % self.format_time(seek_to)
+                self.seek(seek_to)
+                self.pipeline.set_state(Gst.State.PLAYING)
+
+            ts.connect('overrun', overrun_handler)
+            print 'Registered overrun handler'
 
         self.update_id = GObject.timeout_add(1000, self.update_scale_cb)
 
