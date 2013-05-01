@@ -215,6 +215,23 @@ gst_ts_seeker_stop (GstBaseTransform * trans)
   return TRUE;
 }
 
+static gint64
+gst_ts_seeker_first_offset (GstTSSeeker * ts)
+{
+  GstIndexEntry *entry = NULL;
+  gint64 offset = -1;
+
+  entry = gst_index_get_assoc_entry (ts->index,
+      GST_INDEX_LOOKUP_BEFORE, GST_ASSOCIATION_FLAG_NONE, GST_FORMAT_TIME,
+      0);
+
+  if (entry) {
+    gst_index_entry_assoc_map (entry, GST_FORMAT_BYTES, &offset);
+  }
+
+  return offset;
+}
+
 static GstClockTime
 gst_ts_seeker_bytes_to_stream_time (GstTSSeeker * ts, guint64 buffer_offset,
     gboolean accurate)
@@ -254,7 +271,10 @@ gst_ts_seeker_bytes_to_stream_time (GstTSSeeker * ts, guint64 buffer_offset,
 			GST_TIME_ARGS (time), offset);
     }
     ret = (GstClockTime) time;
-  } else if (buffer_offset == 0) {
+  } else if (buffer_offset < gst_ts_seeker_first_offset (ts)) {
+    /* This means that the upstream returned a segment starting before the first
+     * indexed buffer (the first one that has PCR).
+     */
     ret = 0;
   } else {
     if (accurate) {
