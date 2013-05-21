@@ -891,6 +891,9 @@ gst_ts_shifter_finalize (GObject * object)
   g_cond_clear (&ts->buffer_add);
 
   g_free (ts->allocator_name);
+  if (ts->cache) {
+    gst_ts_cache_unref (ts->cache);
+  }
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
 }
@@ -989,6 +992,7 @@ gst_ts_shifter_init (GstTSShifter * ts)
 
   ts->allocator_name = NULL;
 
+  ts->cache = NULL;
   ts->cache_size = DEFAULT_CACHE_SIZE;
 
   GST_DEBUG_OBJECT (ts, "initialized time shifter");
