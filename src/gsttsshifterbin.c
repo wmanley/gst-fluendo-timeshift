@@ -155,7 +155,7 @@ mirror_pad (GstElement * element, const gchar * static_pad_name, GstBin * bin)
 static void
 gst_element_clear (GstElement ** elem)
 {
-  g_return_if_fail (!elem);
+  g_return_if_fail (elem);
   if (*elem) {
     g_object_unref (G_OBJECT (*elem));
     *elem = NULL;
