@@ -456,6 +456,12 @@ gst_ts_shifter_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
       gst_event_unref (event);
       break;
     }
+    case GST_EVENT_CAPS:
+    {
+      /* we swallow this event to make some upstream elements happy */
+      gst_event_unref (event);
+      break;
+    }
     default:
     {
       GST_CAT_LOG_OBJECT (ts_flow, ts, "dropped event %s",
