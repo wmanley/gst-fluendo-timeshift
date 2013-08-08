@@ -83,8 +83,9 @@ slot_write (Slot * slot, guint8 * data, guint size, guint64 offset)
   GstMapInfo mi;
 
   GST_BUFFER_OFFSET (slot->buffer) = offset;
-  g_return_val_if_fail (gst_buffer_map (slot->buffer, &mi, GST_MAP_WRITE),
-      FALSE);
+  if (!gst_buffer_map (slot->buffer, &mi, GST_MAP_WRITE)) {
+    g_return_val_if_reached (FALSE);
+  }
   memcpy (mi.data + slot->size, data, size);
   gst_buffer_unmap (slot->buffer, &mi);
 #if DEBUG
