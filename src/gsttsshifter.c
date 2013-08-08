@@ -18,11 +18,17 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#define _GNU_SOURCE
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
 
 #include "gsttsshifter.h"
+
+/* For sync_file_range and posix_fadvise */
+#include <gst/gstfilememallocator.h>
+#include <fcntl.h>
 
 #include <glib/gstdio.h>
 
@@ -144,6 +150,7 @@ gst_ts_shifter_pop (GstTSShifter * ts)
 {
   GstFlowReturn ret = GST_FLOW_OK;
   GstBuffer *buffer;
+  GstFileMemory *mem;
 
   if (!(buffer = gst_ts_cache_pop (ts->cache, ts->is_eos)))
     goto no_item;
@@ -184,7 +191,17 @@ gst_ts_shifter_pop (GstTSShifter * ts)
       "pushing buffer %p of size %d, offset %" G_GUINT64_FORMAT,
       buffer, gst_buffer_get_size (buffer), GST_BUFFER_OFFSET (buffer));
 
+  mem = GST_FILE_MEMORY (gst_buffer_get_memory (buffer, 0));
   ret = gst_pad_push (ts->srcpad, buffer);
+
+  /* Hack: Try to avoid trashing caches.  It would be much neater to do this
+   * when the GstBuffer sent downstream is destroyed but I couldn't work out
+   * how to do this.
+   *
+   * This will fail if the pages haven't hit disk yet but that's OK as in that
+   * case the write head will take care of it. */
+  gst_filemem_fadvise (mem, POSIX_FADV_DONTNEED);
+  gst_memory_unref ((GstMemory *) mem);
 
   /* need to check for srcresult here as well */
   FLOW_MUTEX_LOCK_CHECK (ts, ts->srcresult, out_flushing);

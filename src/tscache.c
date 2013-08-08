@@ -18,6 +18,8 @@
  * Boston, MA 02110-1301, USA.
  */
 
+#define _GNU_SOURCE
+
 #ifdef HAVE_CONFIG
 #include "config.h"
 #endif
@@ -27,6 +29,10 @@
 #include <stdio.h>
 #include <glib/gstdio.h>
 #include <string.h>
+
+/* For sync_file_range */
+#include <gst/gstfilememallocator.h>
+#include <fcntl.h>
 
 GST_DEBUG_CATEGORY_EXTERN (ts_flow);
 #define GST_CAT_DEFAULT (ts_flow)
@@ -41,6 +47,60 @@ typedef struct _SlotMeta SlotMeta;
 
 #define SLOT_META_INFO  (gst_slot_meta_get_info())
 #define gst_buffer_get_slot_meta(b) ((SlotMeta*)gst_buffer_get_meta((b),SLOT_META_INFO))
+
+/*
+ * Page cache management
+ *
+ * The timeshift cache takes care to avoid taking up too much of the linux
+ * page cache as it has fairly predictible read/write behaviour.  We can say:
+ *
+ *  * Once a page has been read it is not likely to be read again.
+ *  * Once a page has been written it will not be written again until the
+ *    timeshifter wraps
+ *
+ * We can use sync_file_range and posix_fadvise to tell the kernel to drop the
+ * pages from cache.  We always do this for pages that have just been read.
+ * We also wish to do this for pages that have been written but are not going
+ * to be read for a while (e.g. while timeshifting) while still giving the
+ * kernel some time to write the pages out to disk before we block waiting for
+ * it to do so.  We don't want to ask the kernel to drop a page from cache if
+ * it's just about to be read.
+ *
+ * So we define two values:
+ *
+ *  * PAGE_SYNC_TIME_SLOTS - how long do we want to give the kernel to write
+ *    newly written pages to disk before we block until pages are successfully
+ *    written.
+ *  * READ_KEEP_PAGE_SLOTS - Don't throw pages away if the read head is going
+ *    to be needing them.
+ *
+ * Diagram:
+ *
+ *         r−−−−>                         Legend
+ *                  <−−−−−−−−−−−w
+ * --------#--------#############······   r−−−−> - read head plus line showing
+ *                                                 READ_KEEP_PAGE_SLOTS
+ *              r−−−−>                    <−−−−w - write head plus line showing
+ *                  <−−−−−−−−−−−w                  PAGE_SYNC_TIME_SLOTS
+ * -------------#################······   ······ - Unwritten slots
+ *                                        ###### - Slots in page cache
+ *                    r−−−−>              ------ - Written slots not in page
+ *                  <−−−−−−−−−−−w                  cache
+ * -----------------#############······
+ *
+ *                           r−−−−>
+ *                  <−−−−−−−−−−−w
+ * -----------------#############······
+ *
+ * Note: there's still the possiblity of some data being left in page cache
+ * in the specific case when you seek while in the state indicated in the
+ * second diagram above.  It is not worth the additonal complexity to the
+ * seeking code to "fix" this as it it unlikely and nothing too bad happens
+ * even if it occurs.
+ */
+
+#define PAGE_SYNC_TIME_SLOTS (20)       /* 640kB */
+#define READ_KEEP_PAGE_SLOTS (10)       /* 320kB */
 
 typedef enum
 {
@@ -449,6 +509,31 @@ gst_ts_cache_pop (GstTSCache * cache, gboolean drain)
   return buffer;
 }
 
+/* Does a + b being careful to wrap appropriately and taking care of negative
+ * numbers, overflows, etc. */
+static guint
+gst_ts_cache_slot_idx_add (GstTSCache * cache, guint a, int b)
+{
+  guint size = cache->nslots;
+
+  /* b_norm is positive and small but will behave as b when used in modulo
+     arithmatic */
+  guint b_norm = (b >= 0) ? (b % size) : size - ((-b) % size);
+
+  return (a + b_norm) % size;
+}
+
+/* Is slot x between a and b where a is the lower bound and b the upper one? */
+static gboolean
+gst_ts_cache_slot_in_range (GstTSCache * cache, guint x, guint a, guint b)
+{
+  g_return_val_if_fail (b < cache->nslots, FALSE);
+  if (a < b)
+    return x >= a && x < b;
+  else
+    return x >= a || x < b;
+}
+
 /**
  * gst_ts_cache_push:
  * @cache: a #GstTSCache
@@ -458,7 +543,6 @@ gst_ts_cache_pop (GstTSCache * cache, gboolean drain)
  * Cache the @buffer and takes ownership of the it.
  *
  */
-
 gboolean
 gst_ts_cache_push (GstTSCache * cache, guint8 * data, gsize size)
 {
@@ -479,10 +563,39 @@ gst_ts_cache_push (GstTSCache * cache, guint8 * data, gsize size)
     if (slot_available (tail, &avail)) {
       avail = MIN (avail, size);
       if (slot_write (tail, data, avail, cache->h_rb_offset)) {
+        guint writeout_idx;
+        GstFileMemory *mem;
+
         /* Move the tail when the slot is full */
         cache->tail = (cache->tail + 1) % cache->nslots;
         cache->h_rb_offset += CACHE_SLOT_SIZE;
         g_atomic_int_inc (&cache->fslots);
+
+        /* Instruct the kernel to start dumping the just written data to disk
+           so we can later drop it from the page cache. */
+        g_warn_if_fail (gst_filemem_sync (GST_FILE_MEMORY
+                (gst_buffer_peek_memory (tail->buffer, 0)),
+                SYNC_FILE_RANGE_WRITE) == 0);
+
+        /* Make sure the pages from a while ago have been written out by now. */
+        writeout_idx =
+            gst_ts_cache_slot_idx_add (cache, cache->tail,
+            -PAGE_SYNC_TIME_SLOTS);
+        mem =
+            GST_FILE_MEMORY (gst_buffer_peek_memory (cache->slots[writeout_idx].
+                buffer, 0));
+        g_warn_if_fail (gst_filemem_sync (mem,
+                SYNC_FILE_RANGE_WAIT_BEFORE | SYNC_FILE_RANGE_WRITE |
+                SYNC_FILE_RANGE_WAIT_AFTER) == 0);
+
+        /* And drop them from the cache unless they're going to be needed by
+         * the read head soon.  e.g. if
+         * (read head < writeout_idx < read_head + READ_KEEP_PAGE_SLOTS) */
+        if (!gst_ts_cache_slot_in_range (cache, writeout_idx, cache->head,
+                gst_ts_cache_slot_idx_add (cache, cache->head,
+                    READ_KEEP_PAGE_SLOTS))) {
+          g_warn_if_fail (gst_filemem_fadvise (mem, POSIX_FADV_DONTNEED) == 0);
+        }
       }
       data += avail;
       size -= avail;
