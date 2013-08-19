@@ -46,9 +46,10 @@ struct _GstTSIndexer
   GstClockTimeDiff delta;
 
   /* PCR tracking */
-  guint64 last_pcr;
+  gint64 last_pcr;
+  gint64 new_pcr;
   guint64 current_offset;
-  GstClockTime base_time;
+  guint64 pcr_counter_delta;
   GstClockTime last_time;
 };
 
