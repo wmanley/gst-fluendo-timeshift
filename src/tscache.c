@@ -330,11 +330,11 @@ gst_ts_cache_flush (GstTSCache * cache)
  *
  */
 GstTSCache *
-gst_ts_cache_new (gsize size, const gchar * allocator_name)
+gst_ts_cache_new (guint64 size, const gchar * allocator_name)
 {
   GstTSCache *cache;
-  guint nslots;
-  int i;
+  guint64 nslots;
+  guint64 i;
 
   cache = g_new (GstTSCache, 1);
 
