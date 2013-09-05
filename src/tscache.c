@@ -45,10 +45,6 @@ GST_DEBUG_CATEGORY_EXTERN (ts_flow);
 #define INVALID_OFFSET ((guint64) -1)
 
 typedef struct _Slot Slot;
-typedef struct _SlotMeta SlotMeta;
-
-#define SLOT_META_INFO  (gst_slot_meta_get_info())
-#define gst_buffer_get_slot_meta(b) ((SlotMeta*)gst_buffer_get_meta((b),SLOT_META_INFO))
 
 /*
  * Page cache management
@@ -223,72 +219,6 @@ err:
 
 /* Slot Buffer */
 
-/**
- * SlotMeta:
- * @cache: a reference to the our #cache
- * @slot: the slot of this buffer
- *
- * Subclass containing additional information about our cache.
- */
-struct _SlotMeta
-{
-  GstMeta meta;
-
-  /* Reference to the cache we belong to */
-  GstTSCache *cache;
-  Slot *slot;
-};
-
-GType gst_slot_meta_api_get_type (void);
-#define SLOT_META_API_TYPE  (gst_slot_meta_api_get_type())
-
-static gboolean
-gst_slot_meta_init (SlotMeta * meta, gpointer params, GstBuffer * buffer)
-{
-  meta->cache = NULL;
-  meta->slot = NULL;
-  return TRUE;
-}
-
-static void
-gst_slot_meta_free (SlotMeta * meta, GstBuffer * buffer)
-{
-  if (meta->slot)
-    g_atomic_int_set (&meta->slot->state, STATE_RECYCLE);
-
-  if (meta->cache)
-    gst_ts_cache_unref (meta->cache);
-}
-
-GType
-gst_slot_meta_api_get_type (void)
-{
-  static volatile GType type;
-  static const gchar *tags[] = { NULL };
-
-  if (g_once_init_enter (&type)) {
-    GType _type = gst_meta_api_type_register ("GstSlotMetaAPI", tags);
-    g_once_init_leave (&type, _type);
-  }
-  return type;
-}
-
-static const GstMetaInfo *
-gst_slot_meta_get_info (void)
-{
-  static const GstMetaInfo *info = NULL;
-
-  if (g_once_init_enter (&info)) {
-    const GstMetaInfo *_info = gst_meta_register (SLOT_META_API_TYPE,
-        "GstSlotMeta", sizeof (SlotMeta),
-        (GstMetaInitFunction) gst_slot_meta_init,
-        (GstMetaFreeFunction) gst_slot_meta_free,
-        (GstMetaTransformFunction) NULL);
-    g_once_init_leave (&info, _info);
-  }
-  return info;
-}
-
 typedef struct MmappedSlotContext_
 {
   Slot *slot;
@@ -305,6 +235,7 @@ munmap_slot (gpointer * data)
    * but that's OK as in that case the write head will take care of it. */
   g_warn_if_fail (posix_fadvise64 (ctx->cache->read_fd, ctx->slot->offset,
           CACHE_SLOT_SIZE, POSIX_FADV_DONTNEED) == 0);
+  g_atomic_int_set (&ctx->slot->state, STATE_RECYCLE);
 
   g_slice_free (MmappedSlotContext, ctx);
 }
@@ -312,7 +243,6 @@ munmap_slot (gpointer * data)
 static GstBuffer *
 gst_slot_buffer_new (GstTSCache * cache, Slot * slot)
 {
-  SlotMeta *meta;
   MmappedSlotContext *ctx;
 
   gpointer data = mmap (NULL, CACHE_SLOT_SIZE, PROT_READ,
@@ -332,10 +262,6 @@ gst_slot_buffer_new (GstTSCache * cache, Slot * slot)
       gst_buffer_new_wrapped_full (GST_MEMORY_FLAG_READONLY, data,
       CACHE_SLOT_SIZE, 0, CACHE_SLOT_SIZE, ctx,
       munmap_slot);
-
-  meta = (SlotMeta *) gst_buffer_add_meta (buffer, SLOT_META_INFO, NULL);
-  meta->cache = gst_ts_cache_ref (cache);
-  meta->slot = slot;
 
   GST_BUFFER_OFFSET (buffer) = slot->stream_offset;
   GST_BUFFER_OFFSET_END (buffer) = slot->stream_offset + slot->size;
