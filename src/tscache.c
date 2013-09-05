@@ -189,7 +189,7 @@ slot_write (int fd, Slot * slot, guint8 * data, guint size,
 {
   slot->stream_offset = stream_offset;
 
-  if (lseek64 (fd, slot->offset + slot->size, SEEK_SET) == -1) {
+  if (lseek (fd, slot->offset + slot->size, SEEK_SET) == -1) {
     GST_WARNING ("Timeshift buffer seek failed: %s", strerror (errno));
     goto err;
   }

@@ -134,6 +134,10 @@ gst_ts_seeker_init (GstTSSeeker * seeker)
 {
 }
 
+/**
+ * gst_ts_seeker_replace_index: 
+ * @new_index: (allow-none) (transfer full): Replacement index
+ */
 static void
 gst_ts_seeker_replace_index (GstTSSeeker * seeker, GstIndex * new_index)
 {
@@ -142,7 +146,6 @@ gst_ts_seeker_replace_index (GstTSSeeker * seeker, GstIndex * new_index)
     seeker->index = NULL;
   }
   if (new_index) {
-    gst_object_ref (new_index);
     seeker->index = new_index;
   }
 }
