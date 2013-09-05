@@ -176,6 +176,10 @@ gst_ts_indexer_init (GstTSIndexer * indexer)
   indexer->pcr_counter_delta = 0;
 }
 
+/**
+ * gst_ts_indexer_replace_index: 
+ * @new_index: (allow-none) (transfer full): Replacement index
+ */
 static void
 gst_ts_indexer_replace_index (GstTSIndexer * base,
     GstIndex * new_index, gboolean own)
@@ -185,7 +189,6 @@ gst_ts_indexer_replace_index (GstTSIndexer * base,
     base->index = NULL;
   }
   if (new_index) {
-    gst_object_ref (new_index);
     base->index = new_index;
     base->own_index = own;
   }
