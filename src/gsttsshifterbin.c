@@ -32,8 +32,7 @@ G_DEFINE_TYPE (GstTSShifterBin, gst_ts_shifter_bin, GST_TYPE_BIN);
 enum
 {
   PROP_0,
-  PROP_CACHE_SIZE,
-  PROP_ALLOCATOR_NAME,
+  PROP_BACKING_STORE_FD,
   PROP_LAST
 };
 
@@ -56,16 +55,11 @@ gst_ts_shifter_bin_set_property (GObject * object,
   GstTSShifterBin *ts_bin = GST_TS_SHIFTER_BIN (object);
 
   switch (prop_id) {
-    case PROP_CACHE_SIZE:
+    case PROP_BACKING_STORE_FD:
+      /* Forward directly onto the cache */
       g_object_set_property (G_OBJECT (ts_bin->timeshifter),
-          "cache-size", value);
+          pspec->name, value);
       break;
-
-    case PROP_ALLOCATOR_NAME:
-      g_object_set_property (G_OBJECT (ts_bin->timeshifter),
-          "allocator-name", value);
-      break;
-
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -79,14 +73,10 @@ gst_ts_shifter_bin_get_property (GObject * object,
   GstTSShifterBin *ts_bin = GST_TS_SHIFTER_BIN (object);
 
   switch (prop_id) {
-    case PROP_CACHE_SIZE:
+    case PROP_BACKING_STORE_FD:
+      /* Forward directly onto the cache */
       g_object_get_property (G_OBJECT (ts_bin->timeshifter),
-          "cache-size", value);
-      break;
-
-    case PROP_ALLOCATOR_NAME:
-      g_object_get_property (G_OBJECT (ts_bin->timeshifter),
-          "allocator-name", value);
+          pspec->name, value);
       break;
 
     default:
@@ -109,18 +99,11 @@ gst_ts_shifter_bin_class_init (GstTSShifterBinClass * klass)
   gobject_class->set_property = gst_ts_shifter_bin_set_property;
   gobject_class->get_property = gst_ts_shifter_bin_get_property;
 
-  g_object_class_install_property (gobject_class, PROP_CACHE_SIZE,
-      g_param_spec_uint64 ("cache-size",
-          "Cache size in bytes",
-          "Max. amount of data cached in memory (bytes)",
-          DEFAULT_MIN_CACHE_SIZE, G_MAXUINT64, DEFAULT_CACHE_SIZE,
-          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
-
-  g_object_class_install_property (gobject_class, PROP_ALLOCATOR_NAME,
-      g_param_spec_string ("allocator-name", "Allocator name",
-          "The allocator to be used to allocate space for "
-          "the ring buffer (NULL - default system allocator).",
-          NULL, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+  g_object_class_install_property (gobject_class, PROP_BACKING_STORE_FD,
+      g_param_spec_int ("backing-store-fd",
+          "Backing store FD",
+          "File descriptor of a file in which to store video stream",
+          -1, G_MAXINT, -1, G_PARAM_READWRITE | G_PARAM_CONSTRUCT));
 
   gst_element_class_add_pad_template (gstelement_class,
       gst_static_pad_template_get (&srctemplate));

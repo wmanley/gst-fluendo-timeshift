@@ -35,7 +35,7 @@ G_BEGIN_DECLS
  */
 typedef struct _GstTSCache GstTSCache;
 
-GstTSCache *gst_ts_cache_new (guint64 size, const gchar * allocator_name);
+GstTSCache *gst_ts_cache_new (int fd);
 
 GstTSCache *gst_ts_cache_ref (GstTSCache * cache);
 void gst_ts_cache_unref (GstTSCache * cache);
