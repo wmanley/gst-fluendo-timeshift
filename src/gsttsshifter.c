@@ -324,7 +324,8 @@ out_leaking:
   {
     gboolean emit_overrun = FALSE;
 
-    GST_CAT_LOG_OBJECT (ts_flow, ts, "leaking %" G_GSIZE_FORMAT " bytes of data", size);
+    GST_CAT_LOG_OBJECT (ts_flow, ts,
+        "leaking %" G_GSIZE_FORMAT " bytes of data", size);
     if (!ts->is_leaking) {
       ts->is_leaking = TRUE;
       emit_overrun = TRUE;
