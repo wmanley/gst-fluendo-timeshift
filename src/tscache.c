@@ -107,6 +107,9 @@ struct _GstTSCache
   volatile gint refcount;
 
   GMutex lock;
+  GCond cond;
+
+  gboolean flushing;
 
   guint64 h_offset;             /* highest offset */
   guint64 l_rb_offset;          /* lowest offset in the ringbuffer */
@@ -126,6 +129,15 @@ struct _GstTSCache
 
   int write_fd;
   int read_fd;
+
+  /* All of these are in stream offset, not offset into timeshift file.  The
+   * latter are derived quantities. */
+  off64_t write_head;
+  off64_t read_head;
+  off64_t recycle_head;
+
+  off64_t recycle_gap_size;
+  off64_t buffer_size;
 };
 
 #define GST_CACHE_LOCK(cache) G_STMT_START {                                \
@@ -135,6 +147,69 @@ struct _GstTSCache
 #define GST_CACHE_UNLOCK(cache) G_STMT_START {                              \
   g_mutex_unlock (&cache->lock);                                            \
 } G_STMT_END
+
+/**
+ * Calculates a - b taking into account cache wrapping
+ */
+static off64_t
+wrapping_sub (guint64_t size, off64_t a, off64_t b)
+{
+  return (a - b) % size;
+}
+
+#define GST_FLOW_CUSTOM_ERROR TS_FLOW_NO_SPACE
+
+static inline void
+check_invariants_locked (GstTSCache * cache)
+{
+  assert (write_head >= read_head &&
+      read_head >= recycle_head && recycle_head >= 0);
+  assert (read_head >= write_head - size && recycle_head >= write_head - size);
+}
+
+static GFlowReturn
+advance_write_head_locked (GstTSCache * cache, off64_t bytes)
+{
+  off64_t reuseable_bytes;
+  check_invariants_locked (cache);
+
+  reuseable_bytes = cache->size - (cache->write_head - cache->recycle_head);
+
+  if (bytes > reusable_bytes) {
+    return TS_FLOW_NO_SPACE;
+  }
+  cache->write_head += bytes;
+  return GST_FLOW_OK;
+}
+
+static GFlowReturn
+advance_read_head_locked (GstTSCache * cache, off64_t bytes)
+{
+  off64_t bytes_available_for_reading;
+  check_invariants_locked (cache);
+
+  bytes_available_for_reading = cache->write_head - cache->read_head;
+  if (bytes_available_for_reading < bytes) {
+    return TS_FLOW_NO_SPACE;
+  }
+  cache->read_head += bytes;
+  cache->mapped_size += bytes;
+  return TS_FLOW_OK;
+}
+
+static GFlowReturn
+return_data_to_pool_locked (GstTSCache * cache, off64_t offset, off64_t size)
+{
+  check_invariants_locked (cache);
+  cache->mapped_size -= size;
+  cache->unmapped_unrecycled_size += size;
+
+  if (cache->recycle_head == offset) {
+    cache->recycle_head += cache->unmapped_unrecycled_size;
+    cache->unmapped_unrecycled_size = 0;
+  }
+}
+
 
 typedef enum
 {
@@ -160,6 +235,14 @@ struct _Slot
   off64_t stream_offset;
 };
 
+static inline off64_t
+gst_ts_cache_get_slot_offset (const GstTSCache * cache, const Slot * slot)
+{
+  ssize_t idx = slot - cache->slots;
+  g_return_val_if_fail (idx >= 0 && idx < cache->nslots, 0);
+  return idx * CACHE_SLOT_SIZE;
+}
+
 static inline gboolean
 slot_available (Slot * slot, gsize * size)
 {
@@ -180,18 +263,18 @@ slot_available (Slot * slot, gsize * size)
 
 /* returns TRUE if slot is full */
 static inline GstFlowReturn
-slot_write (int fd, Slot * slot, guint8 * data, guint size,
+slot_write (GstTSCache * cache, Slot * slot, guint8 * data, guint size,
     guint64 stream_offset)
 {
   slot->stream_offset = stream_offset;
 
-  if (lseek (fd, slot->offset + slot->size, SEEK_SET) == -1) {
+  if (lseek (cache->write_fd, cache->write_head, SEEK_SET) == -1) {
     GST_WARNING ("Timeshift buffer seek failed: %s", strerror (errno));
     goto err;
   }
   while (size > 0) {
     /* TODO: poll first to make these writes interruptable */
-    ssize_t bytes_written = write (fd, data, size);
+    ssize_t bytes_written = write (cache->write_fd, data, size);
     if (bytes_written < 0) {
       if (errno == EAGAIN)
         continue;
@@ -203,6 +286,7 @@ slot_write (int fd, Slot * slot, guint8 * data, guint size,
       size -= bytes_written;
       data += bytes_written;
       slot->size += bytes_written;
+      cache->write_head += bytes_written;
     }
   }
 
@@ -363,6 +447,7 @@ gst_ts_cache_new (int fd)
   cache->h_offset = 0;
   cache->l_rb_offset = 0;
   cache->h_rb_offset = 0;
+  cache->write_head = 0;
   cache->write_fd = wr_fd;
   cache->read_fd = rd_fd;
 
@@ -583,8 +668,9 @@ gst_ts_cache_push (GstTSCache * cache, guint8 * data, gsize size)
     if (slot_available (tail, &avail)) {
       GstFlowReturn write_result;
       avail = MIN (avail, size);
-      write_result = slot_write (cache->write_fd, tail, data, avail,
-          cache->h_rb_offset);
+
+      cache->write_head = slot->offset + slot->size;
+      write_result = slot_write (cache, tail, data, avail, cache->h_rb_offset);
       if (write_result < 0) {
         /* error or flushing */
         return FALSE;
